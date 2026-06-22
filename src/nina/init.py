@@ -193,7 +193,10 @@ class OpenAIProvider(_HttpProvider):
         super().__init__()
         self.model = llm_cfg["model"]
         self.api_key = llm_cfg["apiKey"]
-        self.endpoint = (llm_cfg.get("endpoint") or "https://api.openai.com").rstrip("/")
+        # Default endpoint includes /v1 so callers only append /chat/completions.
+        # Custom endpoints (e.g. Gemini: .../v1beta/openai) also end at the base
+        # path and get /chat/completions appended — no /v1 is added by the code.
+        self.endpoint = (llm_cfg.get("endpoint") or "https://api.openai.com/v1").rstrip("/")
         self.temperature = llm_cfg.get("temperature", 0.2)
         self.max_tokens = llm_cfg.get("maxTokens", 1024)
 
@@ -202,13 +205,13 @@ class OpenAIProvider(_HttpProvider):
                 "content-type": "application/json"}
 
     async def ping(self):
-        await self._post(f"{self.endpoint}/v1/chat/completions", {
+        await self._post(f"{self.endpoint}/chat/completions", {
             "model": self.model, "max_tokens": 1,
             "messages": [{"role": "user", "content": "ping"}],
         }, self._headers())
 
     async def resolve(self, system_prompt: str):
-        body = await self._post(f"{self.endpoint}/v1/chat/completions", {
+        body = await self._post(f"{self.endpoint}/chat/completions", {
             "model": self.model,
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
@@ -232,7 +235,7 @@ class OpenAIProvider(_HttpProvider):
                            "Model returned unparseable output after retries.")
 
     async def compose(self, prompt: str):
-        body = await self._post(f"{self.endpoint}/v1/chat/completions", {
+        body = await self._post(f"{self.endpoint}/chat/completions", {
             "model": self.model,
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
