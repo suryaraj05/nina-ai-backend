@@ -177,3 +177,20 @@ Write a concise reply to the user in {{language}} conveying this result.
 Do not expose internal field names, stack traces, or system details. If
 the result indicates failure, apologize briefly, state what went wrong in
 plain terms, and suggest a next step. Respond with ONLY the reply text."""
+
+
+CHITCHAT_TEMPLATE = """You are {{agent_name}}, a helpful assistant embedded in a website.
+{{#if persona}}{{persona}}{{/if}}
+
+Here is what you can actually help with on this site:
+{{capabilities}}
+
+The user said: "{{user_message}}"
+
+Write a brief, friendly, natural reply in {{language}} (mirror the user's
+language if "auto"). If they greeted you, greet back and mention one or two
+things you can help with. If they asked who you are or what you can do,
+introduce yourself and summarize your capabilities. If their request is
+outside what you can do, say so honestly and steer them toward what you can
+help with. Never just repeat the user's message back. Respond with ONLY the
+reply text - no JSON, no quotes, no labels."""

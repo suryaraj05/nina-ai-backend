@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 
 from .errors import LLMError
-from .prompt import COMPOSE_TEMPLATE, render
+from .prompt import CHITCHAT_TEMPLATE, COMPOSE_TEMPLATE, render
 
 
 def _deterministic_reply(action_name, result, action_error=None) -> str:
@@ -60,3 +60,37 @@ async def compose_response(
         return text.strip(), usage
     except LLMError:
         return _deterministic_reply(action_name, result, action_error), {}
+
+
+async def compose_chitchat(
+    llm,
+    identity,
+    behavior,
+    capabilities,
+    user_message,
+    fallback,
+) -> tuple[str, dict]:
+    """Generate a conversational reply via a clean completion.
+
+    Used for chitchat / unsupported turns. Relying on the structured
+    resolution's user_reply field is unreliable with weaker models (they
+    often echo the user's message), so we ask for a plain reply instead.
+    Returns (reply_text, usage_dict).
+    """
+    payload = {
+        "agent_name": identity.get("agentName", "Assistant"),
+        "persona": identity.get("persona") or identity.get("description") or "",
+        "capabilities": capabilities or "General questions about this site.",
+        "user_message": user_message,
+        "language": behavior.get("language", "auto"),
+    }
+    prompt = render(CHITCHAT_TEMPLATE, payload)
+    try:
+        text, usage = await llm.compose(prompt)
+        text = (text or "").strip()
+        # Guard against an echo or empty result slipping through.
+        if not text or text.lower() == (user_message or "").strip().lower():
+            return fallback, usage
+        return text, usage
+    except LLMError:
+        return fallback, {}

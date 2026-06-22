@@ -31,7 +31,7 @@ from .planner import (
     pop_plan_resume_if_ready,
 )
 from .reasoner import maybe_reason
-from .responder import compose_response
+from .responder import compose_chitchat, compose_response
 from .session import resolve_reference_parameters, update_reference_map
 
 
@@ -915,11 +915,27 @@ async def run_turn(
     if resolution in ("chitchat", "unsupported") or (
         resolution != "action" and resolution != "confirm"
     ):
-        reply = res.get("user_reply") or (
+        fallback = (
             "I can help with the actions registered for this application."
             if resolution == "unsupported"
             else "How can I help?"
         )
+        # Generate the reply with a clean completion instead of trusting the
+        # structured user_reply field — weaker models tend to echo the user's
+        # message there. Fall back to user_reply, then to a static string.
+        caps = "\n".join(
+            f"- {a.get('name')}: {a.get('description', '').strip()}"
+            for a in core.registry.all()
+        )
+        reply, chit_usage = await compose_chitchat(
+            core.llm,
+            core.identity,
+            core.behavior,
+            caps,
+            msg,
+            res.get("user_reply") or fallback,
+        )
+        usage_parts = (usage_parts or []) + ([chit_usage] if chit_usage else [])
         turn = await _build_turn(
             core,
             state,
