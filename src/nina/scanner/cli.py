@@ -44,6 +44,9 @@ def _get_scanner(framework: str):
     if framework == "rails":
         from .scanners.rails_scanner import RailsScanner
         return RailsScanner()
+    if framework == "nestjs":
+        from .scanners.nestjs_scanner import NestJSScanner
+        return NestJSScanner()
     print(f"[nina-scan] Unknown framework: {framework}", file=sys.stderr)
     sys.exit(1)
 
@@ -79,6 +82,16 @@ def _print_preflight(manifest: dict) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Windows terminals default to cp1252 which can't print box-drawing chars.
+    # Reconfigure stdout/stderr to UTF-8 if possible (Python 3.7+).
+    import io
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     parser = argparse.ArgumentParser(
         prog="nina-scan",
         description="Scan API source code and generate a NINA action manifest.",
@@ -91,7 +104,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--framework", default="auto",
-        choices=["auto", "fastapi", "express", "django", "flask", "laravel", "rails"],
+        choices=["auto", "fastapi", "express", "nestjs", "django", "flask", "laravel", "rails"],
         help="Web framework (default: auto-detect)",
     )
     parser.add_argument(
@@ -128,7 +141,7 @@ def main(argv: list[str] | None = None) -> int:
         if not framework:
             print(
                 "[nina-scan] Could not auto-detect framework.\n"
-                "  Hint: use --framework fastapi|express|django|flask|laravel|rails",
+                "  Hint: use --framework fastapi|express|nestjs|django|flask|laravel|rails",
                 file=sys.stderr,
             )
             return 1

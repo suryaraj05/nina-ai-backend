@@ -19,10 +19,12 @@ def detect_framework(project: Path) -> str | None:
         if "django" in src_text.lower() or _dep_present(project, "django") or (project / "manage.py").exists():
             return "django"
 
-    # --- JavaScript/TypeScript (Express / Next / Fastify) ---
+    # --- JavaScript/TypeScript (NestJS / Express / Fastify) ---
     pkg = project / "package.json"
     if pkg.exists():
         pkg_text = pkg.read_text(encoding="utf-8", errors="ignore").lower()
+        if "@nestjs/core" in pkg_text or "@nestjs/common" in pkg_text:
+            return "nestjs"
         if "express" in pkg_text:
             return "express"
         if "fastify" in pkg_text:
