@@ -201,6 +201,7 @@
 
       <label>Provider</label>
       <select id="llmProvider" onchange="onProviderChange()">
+        <option value="openrouter">OpenRouter (free models)</option>
         <option value="openai_gemini">Google Gemini (free)</option>
         <option value="anthropic">Anthropic (Claude)</option>
         <option value="openai">OpenAI (GPT)</option>
@@ -485,19 +486,21 @@ function timeSince(epochSecs) {
 
 // ── LLM config ────────────────────────────────────────────────────────────────
 const PROVIDER_PRESETS = {
+  openrouter:    { provider:'openai', model:'meta-llama/llama-3.3-70b-instruct:free', endpoint:'https://openrouter.ai/api/v1' },
   openai_gemini: { provider:'openai', model:'gemini-2.0-flash', endpoint:'https://generativelanguage.googleapis.com/v1beta/openai' },
-  anthropic:     { provider:'anthropic', model:'claude-haiku-4-5-20251001', endpoint:null },
-  openai:        { provider:'openai', model:'gpt-4o-mini', endpoint:null },
+  anthropic:     { provider:'anthropic', model:'claude-haiku-4-5-20251001', endpoint:'' },
+  openai:        { provider:'openai', model:'gpt-4o-mini', endpoint:'' },
 };
 
 window.onProviderChange = function() {
   const key = document.getElementById('llmProvider').value;
   const p = PROVIDER_PRESETS[key];
   document.getElementById('llmModel').value = p.model;
-  const endRow = document.getElementById('llmEndpointRow');
-  const endInput = document.getElementById('llmEndpoint');
-  if (p.endpoint) { endRow.style.display = ''; endInput.value = p.endpoint; }
-  else { endRow.style.display = 'none'; endInput.value = ''; }
+  // Endpoint field is ALWAYS visible and editable so a custom OpenAI-compatible
+  // base URL (OpenRouter, Together, local, etc.) can always be set. The preset
+  // just pre-fills a sensible default.
+  document.getElementById('llmEndpointRow').style.display = '';
+  document.getElementById('llmEndpoint').value = p.endpoint || '';
 };
 
 window.saveLlmConfig = async function() {
