@@ -102,6 +102,28 @@ def _usage(prompt_tokens, completion_tokens) -> dict:
     return {"promptTokens": prompt_tokens, "completionTokens": completion_tokens}
 
 
+def _extract_json_object(text: str) -> dict:
+    """Parse a JSON object from model output, tolerating markdown fences and
+    surrounding prose. Raises json.JSONDecodeError if nothing parses."""
+    if not text:
+        raise json.JSONDecodeError("empty", text or "", 0)
+    cleaned = text.strip()
+    # Strip ```json ... ``` or ``` ... ``` fences if present.
+    if cleaned.startswith("```"):
+        cleaned = cleaned.split("```", 2)
+        cleaned = cleaned[1] if len(cleaned) > 1 else text
+        if cleaned.lstrip().lower().startswith("json"):
+            cleaned = cleaned.lstrip()[4:]
+        cleaned = cleaned.strip()
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        start, end = cleaned.find("{"), cleaned.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return json.loads(cleaned[start : end + 1])
+        raise
+
+
 class _HttpProvider:
     """Shared httpx plumbing + spec-mandated HTTP error mapping."""
 
@@ -225,7 +247,10 @@ class OpenAIProvider(_HttpProvider):
             "temperature": self.temperature,
             "messages": [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": "Resolve the current user message now."},
+                {"role": "user", "content": (
+                    "Resolve the current user message now. Respond with ONLY the "
+                    "JSON object described in OUTPUT FORMAT — no markdown, no prose."
+                )},
             ],
             "tools": [{"type": "function",
                        "function": {"name": "resolve_turn",
@@ -235,10 +260,40 @@ class OpenAIProvider(_HttpProvider):
                             "function": {"name": "resolve_turn"}},
         }, self._headers())
         u = body.get("usage") or {}
+        usage = _usage(u.get("prompt_tokens"), u.get("completion_tokens"))
+        msg = ((body.get("choices") or [{}])[0].get("message")) or {}
+        # 1) Preferred path: a forced function/tool call (strong models).
         try:
-            args = body["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
-            return json.loads(args), _usage(u.get("prompt_tokens"), u.get("completion_tokens"))
+            args = msg["tool_calls"][0]["function"]["arguments"]
+            return _extract_json_object(args), usage
         except (KeyError, IndexError, TypeError, json.JSONDecodeError):
+            pass
+        # 2) Fallback: many models (esp. free/open ones) ignore tool_choice and
+        #    put the JSON in the message content instead. Parse it leniently.
+        try:
+            return _extract_json_object(msg.get("content") or ""), usage
+        except (TypeError, json.JSONDecodeError):
+            pass
+        # 3) Last resort: retry once WITHOUT tools, asking for plain JSON. Some
+        #    free models only emit valid JSON when not given a tool schema.
+        retry = await self._post(f"{self.endpoint}/chat/completions", {
+            "model": self.model,
+            "max_tokens": self.max_tokens,
+            "temperature": 0.0,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": (
+                    "Resolve the current user message now. Output ONLY the JSON "
+                    "object from OUTPUT FORMAT. No markdown fences, no prose."
+                )},
+            ],
+        }, self._headers())
+        ru = retry.get("usage") or {}
+        rmsg = ((retry.get("choices") or [{}])[0].get("message")) or {}
+        try:
+            return _extract_json_object(rmsg.get("content") or ""), _usage(
+                ru.get("prompt_tokens"), ru.get("completion_tokens"))
+        except (TypeError, json.JSONDecodeError):
             raise LLMError("NINA_LLM_RESPONSE_MALFORMED",
                            "Model returned unparseable output after retries.")
 
