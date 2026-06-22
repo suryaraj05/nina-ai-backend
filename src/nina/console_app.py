@@ -1076,6 +1076,17 @@ def create_app() -> FastAPI:
         except Exception as exc:
             return {"ok": False, "errors": [str(exc)]}
 
+    @app.put("/v1/auth/sites/{site_id}/settings")
+    def merchant_update_settings(site_id: str, body: dict[str, Any], authorization: str | None = Header(default=None)) -> dict[str, Any]:
+        org = _require_dashboard_token(authorization)
+        _require_site_ownership(org, site_id)
+        allowed = body.get("allowedOrigins")
+        if allowed is not None:
+            if not isinstance(allowed, list):
+                raise HTTPException(status_code=400, detail="allowedOrigins must be a list of URL strings.")
+            STORE.update_site_fields(site_id, allowedOrigins=allowed)
+        return {"ok": True, "data": {"siteId": site_id, "updated": True}}
+
     @app.post("/v1/auth/rotate-token")
     def auth_rotate_token(body: dict[str, Any]) -> dict[str, Any]:
         """Rotate a merchant's dashboard token. Requires admin secret (operator action)."""

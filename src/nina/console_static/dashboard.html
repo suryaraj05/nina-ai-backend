@@ -261,7 +261,7 @@
 nina-scan . --output nina-manifest.json</pre>
           <button class="copy-btn" onclick="copyText('pip install git+https://github.com/suryaraj05/nina-ai.git\nnina-scan . --output nina-manifest.json', this)">Copy</button>
         </div>
-        <p style="font-size:.76rem;color:var(--muted);margin-top:10px;">Supports FastAPI · Django · Flask · Express · Laravel · Rails</p>
+        <p style="font-size:.76rem;color:var(--muted);margin-top:10px;">Supports FastAPI · Django · Flask · Express · NestJS · Laravel · Rails</p>
       </div>
 
       <!-- Step 2: upload file -->
@@ -293,6 +293,17 @@ nina-scan . --output nina-manifest.json</pre>
       <textarea id="contractJson" rows="5" placeholder='Paste nina-manifest.json content here…'></textarea>
       <button class="btn btn-secondary" id="pasteBtn" onclick="uploadContract()" style="width:100%;margin-top:8px;">
         Upload pasted JSON
+      </button>
+    </div>
+
+    <!-- ── Allowed Origins ── -->
+    <div class="card full">
+      <h3><span class="section-icon icon-orange">🌐</span> Allowed origins</h3>
+      <p class="card-sub">Only requests from these URLs will be accepted. Add every domain where your widget is embedded — one per line.</p>
+      <div id="originsStatus" class="status"></div>
+      <textarea id="originsInput" rows="4" placeholder="http://localhost:3010&#10;https://yourstore.com"></textarea>
+      <button class="btn btn-primary btn-full" id="originsBtn" onclick="saveOrigins()" style="margin-top:10px;">
+        Save allowed origins
       </button>
     </div>
 
@@ -421,6 +432,10 @@ async function loadDashboard(data) {
   document.getElementById('loginView').style.display = 'none';
   document.getElementById('dashView').classList.add('active');
 
+  // Populate allowed origins textarea from site data
+  const origins = (S.site.allowedOrigins || []);
+  document.getElementById('originsInput').value = origins.join('\n');
+
   // Load data in parallel
   await Promise.all([loadUsage(), loadKeys()]);
   renderSnippet();
@@ -524,6 +539,24 @@ window.toggleKey = function(btn) {
 window.copyKey = function() {
   if (!S.pubKey) return;
   navigator.clipboard.writeText(S.pubKey);
+};
+
+// ── Origins ───────────────────────────────────────────────────────────────────
+window.saveOrigins = async function() {
+  const raw = document.getElementById('originsInput').value.trim();
+  const origins = raw.split('\n').map(s => s.trim()).filter(Boolean);
+  if (!origins.length) { setStatus('originsStatus', 'Enter at least one origin URL.', 'err'); return; }
+  setLoading('originsBtn', true, 'Save allowed origins');
+  clearStatus('originsStatus');
+  try {
+    const res = await api('/v1/auth/sites/' + S.siteId + '/settings', { allowedOrigins: origins }, 'PUT');
+    if (res.ok) setStatus('originsStatus', 'Saved! Widget requests from these origins are now allowed.', 'ok');
+    else setStatus('originsStatus', res.detail || 'Save failed.', 'err');
+  } catch(e) {
+    setStatus('originsStatus', 'Network error: ' + e.message, 'err');
+  } finally {
+    setLoading('originsBtn', false, 'Save allowed origins');
+  }
 };
 
 // ── Keys ──────────────────────────────────────────────────────────────────────
