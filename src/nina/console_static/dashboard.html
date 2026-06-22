@@ -396,6 +396,7 @@ if (S.token) {
 }
 
 window.logout = function() {
+  if (S.siteId) sessionStorage.removeItem('nina_pub_key_' + S.siteId);
   sessionStorage.removeItem('nina_dash_token');
   S.token = ''; S.org = null; S.site = null; S.pubKey = null;
   document.getElementById('loginView').style.display = '';
@@ -435,6 +436,16 @@ async function loadDashboard(data) {
   // Populate allowed origins textarea from site data
   const origins = (S.site.allowedOrigins || []);
   document.getElementById('originsInput').value = origins.join('\n');
+
+  // Show LLM "already configured" indicator (key is encrypted server-side, never returned)
+  if (S.site.llmConfig) {
+    setStatus('llmStatus', 'AI provider configured. Re-enter your key only if you want to change it.', 'ok');
+    document.getElementById('llmApiKey').placeholder = 'Leave blank to keep existing key';
+  }
+
+  // Restore publishable key from sessionStorage (it's a public key — safe to cache)
+  const cachedKey = sessionStorage.getItem('nina_pub_key_' + S.siteId);
+  if (cachedKey) S.pubKey = cachedKey;
 
   // Load data in parallel
   await Promise.all([loadUsage(), loadKeys()]);
@@ -569,7 +580,8 @@ async function loadKeys() {
     if (live.length) {
       // We only have prefix, not the full token (never stored after issuance).
       // Show prefix for identification; full token shown only at issue time.
-      S.pubKey = null; // prefix only
+      // Full token is shown once at issuance; restore from sessionStorage if available.
+      if (!S.pubKey) S.pubKey = sessionStorage.getItem('nina_pub_key_' + S.siteId) || null;
       renderKeysList(keys);
     }
   } catch(_) {}
@@ -613,6 +625,7 @@ window.issueNewKey = async function() {
     if (res.ok) {
       const full = res.data.token;
       S.pubKey = full;
+      sessionStorage.setItem('nina_pub_key_' + S.siteId, full);
       renderSnippet();
       document.getElementById('keyDisplay').textContent = full;
       S.keyRevealed = true;
