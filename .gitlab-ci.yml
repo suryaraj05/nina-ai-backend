@@ -1,0 +1,16 @@
+stages:
+  - test
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+test:
+  stage: test
+  image: python:3.12-slim
+  cache:
+    paths:
+      - .cache/pip
+  before_script:
+    - pip install -e ".[dev]"
+  script:
+    - pytest -v

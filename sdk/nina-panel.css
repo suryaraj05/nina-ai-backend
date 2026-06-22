@@ -1,0 +1,223 @@
+/* NINA split panel — site stays primary; chat docks on the side (Ask Gemini pattern) */
+
+body.nina-embed-active {
+  margin: 0;
+  transition: margin 0.25s ease;
+}
+
+body.nina-embed-active.nina-panel-open[data-nina-side="right"],
+body.nina-embed-active.nina-panel-open:not([data-nina-side="left"]) {
+  margin-right: min(420px, 38vw);
+}
+
+body.nina-embed-active.nina-panel-open[data-nina-side="left"] {
+  margin-left: min(420px, 38vw);
+}
+
+.nina-root {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  z-index: 2147483000;
+  font: 14px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif;
+  pointer-events: none;
+}
+
+.nina-root[data-side="right"] {
+  right: 0;
+}
+
+.nina-root[data-side="left"] {
+  left: 0;
+}
+
+.nina-root * {
+  box-sizing: border-box;
+}
+
+.nina-toggle {
+  pointer-events: auto;
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 2147483001;
+  border: 0;
+  border-radius: 999px;
+  padding: 12px 18px;
+  background: #1a73e8;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+}
+
+body.nina-panel-open .nina-toggle {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.nina-panel {
+  pointer-events: auto;
+  width: min(420px, 38vw);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #0f1419;
+  color: #e8eaed;
+  border-left: 1px solid #2a3140;
+  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.35);
+  transform: translateX(100%);
+  transition: transform 0.25s ease;
+}
+
+.nina-root[data-side="left"] .nina-panel {
+  border-left: 0;
+  border-right: 1px solid #2a3140;
+  box-shadow: 8px 0 32px rgba(0, 0, 0, 0.35);
+  transform: translateX(-100%);
+}
+
+body.nina-panel-open .nina-panel {
+  transform: translateX(0);
+}
+
+.nina-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid #2a3140;
+}
+
+.nina-panel__head strong {
+  display: block;
+  font-size: 15px;
+}
+
+.nina-panel__head span {
+  font-size: 11px;
+  color: #9aa0a6;
+}
+
+.nina-panel__close {
+  background: transparent;
+  border: 0;
+  color: #9aa0a6;
+  font-size: 22px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.nina-panel__thread {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.nina-panel__form {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid #2a3140;
+}
+
+.nina-panel__form input {
+  flex: 1;
+  background: #161b22;
+  border: 1px solid #2a3140;
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: #e8eaed;
+  font-size: 14px;
+}
+
+.nina-panel__form button {
+  background: #1a73e8;
+  color: #fff;
+  border: 0;
+  border-radius: 10px;
+  padding: 0 16px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.nina-msg {
+  max-width: 92%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  white-space: pre-wrap;
+}
+
+.nina-msg--user {
+  align-self: flex-end;
+  background: #1a3a5c;
+}
+
+.nina-msg--nina {
+  align-self: flex-start;
+  background: #161b22;
+  border: 1px solid #2a3140;
+}
+
+.nina-msg--clarify {
+  border-color: #f0b429;
+}
+
+.nina-msg--typing {
+  color: #9aa0a6;
+  font-style: italic;
+}
+
+.nina-confirm {
+  display: flex;
+  gap: 8px;
+}
+
+.nina-confirm button {
+  background: #161b22;
+  border: 1px solid #2a3140;
+  color: #e8eaed;
+  border-radius: 8px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+.nina-confirm button.yes {
+  border-color: #1a73e8;
+  color: #8ab4f8;
+}
+
+/* Executor effects on host page */
+.nina-flash {
+  outline: 2px solid #1a73e8 !important;
+  outline-offset: 2px;
+  transition: outline 0.2s ease;
+}
+
+.nina-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(12px);
+  background: #161b22;
+  color: #e8eaed;
+  border: 1px solid #2a3140;
+  padding: 10px 16px;
+  border-radius: 10px;
+  opacity: 0;
+  transition: opacity 0.25s, transform 0.25s;
+  z-index: 2147482000;
+  pointer-events: none;
+}
+
+.nina-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.nina-toast.success {
+  border-color: #34a853;
+}
