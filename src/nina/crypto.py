@@ -21,10 +21,8 @@ _SEAL_MARKER = "_sealed"
 
 # ── API key / token hashing (canonical, shared by all stores) ─────────────────
 # Both ConsoleStore (JSON) and PgStore MUST hash identically, or keys issued
-# under one fail to validate under the other (breaks JSON→Postgres migration).
-# Canonical algorithm is HMAC-SHA256. `hash_key_legacy` exists ONLY to verify
-# digests written by the pre-unification PgStore (plain SHA256 of secret+raw);
-# never use it for new writes.
+# under one fail to validate under the other. The single algorithm is
+# HMAC-SHA256 keyed on NINA_CONSOLE_KEY_HASH_SECRET.
 
 
 def key_hash_secret() -> str:
@@ -46,17 +44,6 @@ def hash_key(raw: str, secret: str | None = None) -> str:
     if secret is None:
         secret = key_hash_secret()
     return hmac.new(secret.encode(), raw.encode(), hashlib.sha256).hexdigest()
-
-
-def hash_key_legacy(raw: str, secret: str | None = None) -> str:
-    """DEPRECATED pre-1.0 PgStore hashing (plain SHA256 of secret+raw).
-
-    Retained solely so digests written before the HMAC unification still
-    verify. Do not use for new writes.
-    """
-    if secret is None:
-        secret = key_hash_secret()
-    return hashlib.sha256((secret + raw).encode()).hexdigest()
 
 
 def _fernet() -> Any | None:

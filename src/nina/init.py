@@ -4,13 +4,25 @@ Built-in providers: anthropic (tool_use), openai (function calling), ollama
 (local / remote Ollama with JSON structured resolve). Custom adapters are also
 supported.
 """
+import asyncio
 import inspect
 import json
 import os
+import random
 
 import httpx
 
 from .errors import LLMError
+
+# Transient LLM failures worth retrying with backoff. Auth/config errors are
+# permanent and must fail fast.
+_RETRYABLE_LLM_CODES = {
+    "NINA_LLM_RESPONSE_MALFORMED",
+    "NINA_LLM_RATE_LIMITED",
+    "NINA_LLM_UNREACHABLE",
+}
+_RETRY_BASE_DELAY = 0.5  # seconds; exponential backoff base
+_RETRY_MAX_ATTEMPTS = 3  # initial attempt + 2 retries
 
 VERSION = "1.0.0"
 ANTHROPIC_VERSION = "2023-06-01"
@@ -102,26 +114,88 @@ def _usage(prompt_tokens, completion_tokens) -> dict:
     return {"promptTokens": prompt_tokens, "completionTokens": completion_tokens}
 
 
+def _retry_delay(attempt: int, err: LLMError | None) -> float:
+    """Backoff before the next LLM retry. Honors a provider-supplied
+    retry-after when present, otherwise exponential backoff with jitter."""
+    if err is not None and isinstance(getattr(err, "details", None), dict):
+        retry_after_ms = err.details.get("retryAfterMs")
+        if isinstance(retry_after_ms, (int, float)) and retry_after_ms > 0:
+            return min(retry_after_ms / 1000.0, 10.0)
+    return _RETRY_BASE_DELAY * (2 ** attempt) + random.uniform(0, 0.25)
+
+
+def _iter_balanced_objects(text: str):
+    """Yield each top-level balanced ``{...}`` substring in *text*, honoring
+    braces inside JSON strings so it doesn't miscount on `{` within values."""
+    depth = 0
+    start = -1
+    in_str = False
+    escape = False
+    for i, ch in enumerate(text):
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start != -1:
+                    yield text[start : i + 1]
+                    start = -1
+
+
 def _extract_json_object(text: str) -> dict:
-    """Parse a JSON object from model output, tolerating markdown fences and
-    surrounding prose. Raises json.JSONDecodeError if nothing parses."""
+    """Parse a JSON object from model output, tolerating markdown fences,
+    surrounding prose, and multiple JSON blocks. Raises json.JSONDecodeError
+    if nothing parses."""
     if not text:
         raise json.JSONDecodeError("empty", text or "", 0)
     cleaned = text.strip()
     # Strip ```json ... ``` or ``` ... ``` fences if present.
     if cleaned.startswith("```"):
-        cleaned = cleaned.split("```", 2)
-        cleaned = cleaned[1] if len(cleaned) > 1 else text
+        parts = cleaned.split("```", 2)
+        cleaned = parts[1] if len(parts) > 1 else text
         if cleaned.lstrip().lower().startswith("json"):
             cleaned = cleaned.lstrip()[4:]
         cleaned = cleaned.strip()
     try:
-        return json.loads(cleaned)
+        obj = json.loads(cleaned)
+        if isinstance(obj, dict):
+            return obj
     except json.JSONDecodeError:
-        start, end = cleaned.find("{"), cleaned.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            return json.loads(cleaned[start : end + 1])
-        raise
+        pass
+    # Scan for balanced {...} blocks (not find('{')/rfind('}'), which merges two
+    # separate blocks into one invalid string). A model may emit a reasoning
+    # block then the answer; prefer a block carrying a "resolution" key, else the
+    # last valid object (final-answer convention).
+    valid: list[dict] = []
+    last_err: json.JSONDecodeError | None = None
+    for candidate in _iter_balanced_objects(cleaned):
+        try:
+            obj = json.loads(candidate)
+        except json.JSONDecodeError as exc:
+            last_err = exc
+            continue
+        if isinstance(obj, dict):
+            valid.append(obj)
+    resolution_blocks = [d for d in valid if "resolution" in d]
+    if resolution_blocks:
+        return resolution_blocks[-1]
+    if valid:
+        return valid[-1]
+    if last_err is not None:
+        raise last_err
+    raise json.JSONDecodeError("no JSON object found", cleaned, 0)
 
 
 class _HttpProvider:
@@ -470,19 +544,33 @@ class LLMClient:
         await self.provider.ping()
 
     async def resolve(self, system_prompt: str):
-        last = None
-        for _ in range(3):  # initial attempt + 2 retries
+        last: LLMError | None = None
+        for attempt in range(_RETRY_MAX_ATTEMPTS):
+            # On a retry after malformed output, nudge the model to self-correct
+            # instead of re-sending the identical prompt (deterministic at low
+            # temperature, which otherwise reproduces the same bad output).
+            prompt = system_prompt
+            if attempt > 0 and last and last.code == "NINA_LLM_RESPONSE_MALFORMED":
+                prompt = (
+                    system_prompt
+                    + "\n\n[RETRY] Your previous reply was not valid JSON matching "
+                    "the OUTPUT FORMAT. Return ONLY the JSON object, nothing else."
+                )
             try:
-                resolution, usage = await self.provider.resolve(system_prompt)
+                resolution, usage = await self.provider.resolve(prompt)
                 if (isinstance(resolution, dict)
                         and resolution.get("resolution") in self.RESOLUTIONS):
                     return resolution, usage
                 last = LLMError("NINA_LLM_RESPONSE_MALFORMED",
                                 "Model returned unparseable output after retries.")
             except LLMError as exc:
-                if exc.code != "NINA_LLM_RESPONSE_MALFORMED":
+                # Fail fast on permanent errors (auth, bad config); retry transient.
+                if exc.code not in _RETRYABLE_LLM_CODES:
                     raise
                 last = exc
+
+            if attempt < _RETRY_MAX_ATTEMPTS - 1:
+                await asyncio.sleep(_retry_delay(attempt, last))
         raise last
 
     async def compose(self, prompt: str):

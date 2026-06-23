@@ -26,7 +26,7 @@ try:
 except ImportError:
     _HAS_PSYCOPG2 = False
 
-from .crypto import hash_key, hash_key_legacy, seal_llm_config
+from .crypto import hash_key, seal_llm_config
 from .plans import PLAN_LIMITS as _PLAN_LIMITS, current_period as _current_period
 
 
@@ -187,10 +187,6 @@ class PgStore:
         # Canonical HMAC-SHA256, identical to ConsoleStore (see crypto.hash_key).
         return hash_key(raw, self._key_hash_secret)
 
-    def _hash_key_legacy(self, raw: str) -> str:
-        # Pre-unification plain SHA256(secret+raw). Only for verifying old digests.
-        return hash_key_legacy(raw, self._key_hash_secret)
-
     def _issue_key(self, prefix: str) -> tuple[str, str]:
         raw = prefix + secrets.token_urlsafe(32)
         return raw, self._hash_key(raw)
@@ -264,20 +260,19 @@ class PgStore:
         return {"orgId": org_id, "dashboardToken": raw_token}
 
     def verify_dashboard_token(self, raw_token: str) -> dict[str, Any] | None:
-        # Try canonical HMAC digest first, then the legacy digest so tokens
-        # issued before the hashing unification still validate.
-        for digest in (self._hash_key(raw_token), self._hash_key_legacy(raw_token)):
-            with self._conn() as conn:
-                with self._cur(conn) as cur:
-                    cur.execute(
-                        "SELECT * FROM nina_orgs WHERE dashboard_token_digest = %s LIMIT 1",
-                        (digest,),
-                    )
-                    row = cur.fetchone()
-            if row:
-                stored = row.get("dashboard_token_digest", "")
-                if stored and hmac.compare_digest(stored, digest):
-                    return _org_row(dict(row))
+        digest = self._hash_key(raw_token)
+        with self._conn() as conn:
+            with self._cur(conn) as cur:
+                cur.execute(
+                    "SELECT * FROM nina_orgs WHERE dashboard_token_digest = %s LIMIT 1",
+                    (digest,),
+                )
+                row = cur.fetchone()
+        if not row:
+            return None
+        stored = row.get("dashboard_token_digest", "")
+        if stored and hmac.compare_digest(stored, digest):
+            return _org_row(dict(row))
         return None
 
     # ── site methods ──────────────────────────────────────────────────────────
@@ -474,27 +469,20 @@ class PgStore:
     def resolve_key_to_site(
         self, raw_key: str, origin: str | None
     ) -> tuple[bool, dict[str, Any] | None, dict[str, Any] | None]:
-        # Try canonical HMAC digest first, then the legacy digest so keys issued
-        # before the hashing unification still validate.
-        row = None
-        digest = None
-        for candidate in (self._hash_key(raw_key), self._hash_key_legacy(raw_key)):
-            with self._conn() as conn:
-                with self._cur(conn) as cur:
-                    cur.execute(
-                        """
-                        SELECT k.*, s.*
-                        FROM nina_api_keys k
-                        JOIN nina_sites s ON s.id = k.site_id
-                        WHERE k.kind = 'pk' AND NOT k.revoked AND k.digest = %s
-                        LIMIT 1
-                        """,
-                        (candidate,),
-                    )
-                    row = cur.fetchone()
-            if row:
-                digest = candidate
-                break
+        digest = self._hash_key(raw_key)
+        with self._conn() as conn:
+            with self._cur(conn) as cur:
+                cur.execute(
+                    """
+                    SELECT k.*, s.*
+                    FROM nina_api_keys k
+                    JOIN nina_sites s ON s.id = k.site_id
+                    WHERE k.kind = 'pk' AND NOT k.revoked AND k.digest = %s
+                    LIMIT 1
+                    """,
+                    (digest,),
+                )
+                row = cur.fetchone()
         if not row:
             return False, None, {"code": "UNAUTHORIZED", "message": "Unknown or revoked API key."}
         # Timing-safe compare

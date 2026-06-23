@@ -1,6 +1,7 @@
 """NINA — conversational action layer for any system."""
 from __future__ import annotations
 
+import sys
 import uuid
 
 from . import init as init_module
@@ -17,6 +18,16 @@ from .connector import NinaConnector
 from .session import MemoryStore, SessionAPI, SessionManager
 from .fast_path import compile_fast_path_patterns
 from .skill_loader import BUILTIN_SKILLS_DIR, load_skills, skills_by_action as _skills_by_action
+
+
+def _capture_exception(exc: BaseException) -> None:
+    """Report an exception to Sentry if the SDK is initialized; no-op otherwise."""
+    sentry = sys.modules.get("sentry_sdk")
+    if sentry is not None:
+        try:
+            sentry.capture_exception(exc)
+        except Exception:
+            pass
 
 
 class _Core:
@@ -177,7 +188,11 @@ class Nina:
                 replay_queued=replay_queued,
                 resume_plan=resume_plan,
             )
-        except Exception:
+        except Exception as exc:
+            # Surface internal failures to error tracking before converting them
+            # to the public envelope — otherwise Sentry only ever sees a 200 with
+            # {"ok": false} and never alerts on real engine crashes.
+            _capture_exception(exc)
             return fail(
                 "NINA_INTERNAL",
                 "An unexpected internal error occurred during chat.",

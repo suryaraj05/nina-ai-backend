@@ -210,7 +210,9 @@ class SessionManager:
     async def save(self, state: dict):
         state["lastActiveAt"] = now_iso()
         state["expiresAt"] = self._expires_at()
-        state["history"] = state["history"][-self.max_turns :]
+        # Each turn appends two entries (user + nina), so keep max_turns*2 entries
+        # to retain the configured number of complete turns.
+        state["history"] = state["history"][-(self.max_turns * 2) :]
         try:
             await _call(self.store.set, state["sessionId"], state)
         except Exception as exc:
