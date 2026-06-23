@@ -275,11 +275,23 @@ class AnthropicProvider(_HttpProvider):
             "tool_choice": {"type": "tool", "name": "resolve_turn"},
         }, self._headers())
         u = body.get("usage") or {}
+        usage = _usage(u.get("input_tokens"), u.get("output_tokens"))
+        # Preferred: the forced tool_use block.
         for block in body.get("content", []):
             if block.get("type") == "tool_use" and block.get("name") == "resolve_turn":
-                return block["input"], _usage(u.get("input_tokens"), u.get("output_tokens"))
-        raise LLMError("NINA_LLM_RESPONSE_MALFORMED",
-                       "Model returned unparseable output after retries.")
+                return block["input"], usage
+        # Fallback: the model sometimes returns the JSON as plain text instead of
+        # a tool_use block. Parse it leniently (parity with OpenAIProvider) rather
+        # than failing outright.
+        text = "".join(
+            b.get("text", "") for b in body.get("content", [])
+            if b.get("type") == "text"
+        )
+        try:
+            return _extract_json_object(text), usage
+        except (TypeError, json.JSONDecodeError):
+            raise LLMError("NINA_LLM_RESPONSE_MALFORMED",
+                           "Model returned unparseable output after retries.")
 
     async def compose(self, prompt: str):
         body = await self._post(f"{self.endpoint}/v1/messages", {

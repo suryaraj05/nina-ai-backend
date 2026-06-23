@@ -27,33 +27,17 @@ except ImportError:
     _HAS_PSYCOPG2 = False
 
 from .crypto import hash_key, seal_llm_config
+from .store_util import issue_key as _issue_key_shared, now_ts, parse_origin, rand_id, slug
 from .plans import PLAN_LIMITS as _PLAN_LIMITS, current_period as _current_period
 
 
-def _parse_origin(url: str | None) -> str | None:
-    if not url:
-        return None
-    from urllib.parse import urlparse
-    p = urlparse(url)
-    if p.scheme and p.netloc:
-        return f"{p.scheme}://{p.netloc}"
-    return None
-
-
 # ── helpers ───────────────────────────────────────────────────────────────────
-
-def _now_ts() -> int:
-    return int(time.time())
-
-
-def _rand_id(prefix: str) -> str:
-    return f"{prefix}_{secrets.token_hex(8)}"
-
-
-def _slug(text: str) -> str:
-    out = "".join(ch.lower() if ch.isalnum() else "-" for ch in text.strip())
-    import re
-    return re.sub(r"-{2,}", "-", out).strip("-") or "site"
+# now_ts / rand_id / slug / parse_origin are imported from store_util (shared
+# with ConsoleStore so both stores generate ids and slugs identically).
+_parse_origin = parse_origin
+_now_ts = now_ts
+_rand_id = rand_id
+_slug = slug
 
 
 def _jd(value: Any) -> str:
@@ -188,8 +172,7 @@ class PgStore:
         return hash_key(raw, self._key_hash_secret)
 
     def _issue_key(self, prefix: str) -> tuple[str, str]:
-        raw = prefix + secrets.token_urlsafe(32)
-        return raw, self._hash_key(raw)
+        return _issue_key_shared(prefix, self._key_hash_secret)
 
     def _ensure_schema(self, conn: Any) -> None:
         sql_path = Path(__file__).resolve().parent.parent.parent / "scripts" / "db_init.sql"

@@ -8,6 +8,27 @@ from datetime import datetime, timedelta, timezone
 
 from .errors import StoreError, fail, now_iso, ok
 
+# Approx character budget for retained history (≈1 token per 4 chars). Caps the
+# context contributed by history so a few large API-result payloads can't blow
+# past a small model's window even when the turn count is within max_turns.
+_HISTORY_CHAR_BUDGET = 16000  # ~4k tokens
+
+
+def _prune_history_to_budget(history: list[dict], char_budget: int) -> list[dict]:
+    """Keep the most recent entries that fit within *char_budget* characters.
+    Always keeps at least the last entry so a single huge turn still survives."""
+    kept: list[dict] = []
+    total = 0
+    for entry in reversed(history):
+        size = len(entry.get("content") or "") + len(entry.get("actionSummary") or "")
+        if kept and total + size > char_budget:
+            break
+        total += size
+        kept.append(entry)
+    kept.reverse()
+    return kept
+
+
 # --- Capability 3: reference map ---------------------------------------------
 
 _ITEM_ID_KEYS = ("id", "sku", "productId", "uid")
@@ -211,8 +232,10 @@ class SessionManager:
         state["lastActiveAt"] = now_iso()
         state["expiresAt"] = self._expires_at()
         # Each turn appends two entries (user + nina), so keep max_turns*2 entries
-        # to retain the configured number of complete turns.
-        state["history"] = state["history"][-(self.max_turns * 2) :]
+        # to retain the configured number of complete turns, then additionally
+        # prune by character budget so oversized payloads can't bloat the context.
+        history = state["history"][-(self.max_turns * 2) :]
+        state["history"] = _prune_history_to_budget(history, _HISTORY_CHAR_BUDGET)
         try:
             await _call(self.store.set, state["sessionId"], state)
         except Exception as exc:

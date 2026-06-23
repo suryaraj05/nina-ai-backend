@@ -34,6 +34,7 @@ import logging
 
 from .pool import NinaPool
 from .crypto import hash_key, is_production, seal_llm_config, unseal_llm_config
+from .store_util import issue_key, now_ts, parse_origin, rand_id, slug
 from .net_guard import SsrfError, validate_public_url
 from .console_pack import (
     build_onboarding_pack_files,
@@ -44,38 +45,17 @@ from .contract_validate import validate_executable
 from .generator.pipeline import run_pipeline
 
 
-def _now_ts() -> int:
-    return int(time.time())
-
-
-def _slug(text: str) -> str:
-    out = "".join(ch.lower() if ch.isalnum() else "-" for ch in text.strip())
-    while "--" in out:
-        out = out.replace("--", "-")
-    return out.strip("-") or "site"
-
-
-def _parse_origin(url: str | None) -> str | None:
-    if not url:
-        return None
-    parsed = urlparse(url)
-    if parsed.scheme and parsed.netloc:
-        return f"{parsed.scheme}://{parsed.netloc}"
-    return None
-
-
-def _rand_id(prefix: str) -> str:
-    return f"{prefix}_{secrets.token_hex(6)}"
-
-
 def _hash_key(raw: str) -> str:
     # Canonical HMAC-SHA256, shared with PgStore (see crypto.hash_key).
     return hash_key(raw)
 
 
-def _issue_key(prefix: str) -> tuple[str, str]:
-    visible = f"{prefix}{secrets.token_urlsafe(24)}"
-    return visible, _hash_key(visible)
+# Store helpers shared with PgStore (see store_util).
+_now_ts = now_ts
+_slug = slug
+_parse_origin = parse_origin
+_rand_id = rand_id
+_issue_key = issue_key
 
 
 # ── SSRF guard ───────────────────────────────────────────────────────────────
