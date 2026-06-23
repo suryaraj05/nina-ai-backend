@@ -1075,9 +1075,11 @@ def create_app() -> FastAPI:
             STORE.update_site_fields(site_id, allowedOrigins=allowed)
         return {"ok": True, "data": {"siteId": site_id, "updated": True}}
 
-    @app.post("/v1/auth/rotate-token")
+    @app.post("/v1/rotate-token")
     def auth_rotate_token(body: dict[str, Any]) -> dict[str, Any]:
-        """Rotate a merchant's dashboard token. Requires admin secret (operator action)."""
+        """Rotate a merchant's dashboard token. Operator action — lives under
+        /v1/ (NOT /v1/auth/) so the admin-secret middleware protects it. Issuing
+        a new login token for an arbitrary org must never be unauthenticated."""
         org_id = body.get("orgId", "")
         try:
             rec = STORE.rotate_dashboard_token(org_id)

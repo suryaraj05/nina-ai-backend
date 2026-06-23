@@ -236,12 +236,25 @@
       </div>
 
       <div style="margin-top:24px;">
-        <p style="font-size:.85rem;font-weight:600;margin-bottom:10px;color:var(--muted)">YOUR API KEY</p>
+        <p style="font-size:.85rem;font-weight:600;margin-bottom:10px;color:var(--muted)">YOUR API KEY <span style="font-weight:400">(goes in the snippet above)</span></p>
         <div class="key-box">
           <span class="key-text masked" id="keyDisplay">••••••••••••••••••••••••</span>
           <button class="key-reveal" id="keyRevealBtn">Reveal</button>
           <button class="copy-btn" id="copyKeyBtn" style="position:static;background:#f0f3fb;border-color:var(--border);color:var(--text);">Copy</button>
         </div>
+      </div>
+
+      <div style="margin-top:24px;">
+        <p style="font-size:.85rem;font-weight:600;margin-bottom:6px;color:var(--muted)">YOUR DASHBOARD LOGIN KEY <span style="font-weight:400">(to sign in and manage NINA)</span></p>
+        <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:.8rem;color:#9a3412;">
+          ⚠️ Save this now — it's shown only once and we never store it in a way we can recover. It's your password to the dashboard.
+        </div>
+        <div class="key-box">
+          <span class="key-text masked" id="dashTokenDisplay">••••••••••••••••••••••••</span>
+          <button class="key-reveal" id="dashTokenRevealBtn">Reveal</button>
+          <button class="copy-btn" id="copyDashTokenBtn" style="position:static;background:#f0f3fb;border-color:var(--border);color:var(--text);">Copy</button>
+        </div>
+        <a href="/dashboard" class="btn btn-primary btn-sm" style="margin-top:12px;text-decoration:none;display:inline-block;">Open dashboard →</a>
       </div>
 
       <div id="usageSection" class="metrics hidden">
@@ -467,6 +480,23 @@
   };
   document.getElementById('copyKeyBtn').onclick = function () {
     navigator.clipboard.writeText(S.keyToken || '').then(() => {
+      this.textContent = 'Copied!';
+      setTimeout(() => { this.textContent = 'Copy'; }, 1500);
+    });
+  };
+
+  // ── Step 3: Dashboard login token reveal / copy ──
+  let dashTokenRevealed = false;
+  document.getElementById('dashTokenRevealBtn').onclick = function () {
+    dashTokenRevealed = !dashTokenRevealed;
+    const disp = document.getElementById('dashTokenDisplay');
+    const token = (S.org && S.org.dashboardToken) || '';
+    disp.textContent = dashTokenRevealed ? token : '••••••••••••••••••••••••';
+    disp.className = 'key-text' + (dashTokenRevealed ? '' : ' masked');
+    this.textContent = dashTokenRevealed ? 'Hide' : 'Reveal';
+  };
+  document.getElementById('copyDashTokenBtn').onclick = function () {
+    navigator.clipboard.writeText((S.org && S.org.dashboardToken) || '').then(() => {
       this.textContent = 'Copied!';
       setTimeout(() => { this.textContent = 'Copy'; }, 1500);
     });
