@@ -770,7 +770,20 @@ async def run_turn(
     replay_queued: bool = False,
     resume_plan: bool = False,
 ) -> dict:
-    """Execute one chat turn. Returns the universal envelope."""
+    """Execute one chat turn → the universal envelope.
+
+    Pipeline — each stage may short-circuit by returning a turn envelope:
+      1. validate inputs + load session
+      2. pre-LLM guardrails (prompt-injection screens)
+      3. pending continuations (auto-action / auth-replay / plan-resume)
+      4. resolve the message into a structured intent (fast-path or LLM)
+      5. post-parse guardrails + pending-confirmation (yes/no)
+      6. clarification (ambiguous / low-confidence / missing fields)
+      7. terminal resolutions (chitchat / confirm / unsupported)
+      8. validate input, safety-gate, then execute the action
+
+    Stages 3 and 6 live in _handle_pending_continuations / _handle_clarification.
+    """
     if not core.initialized:
         return fail("NINA_NOT_INITIALIZED", "Call nina.init() first.")
 
@@ -793,6 +806,7 @@ async def run_turn(
             {"reason": exc.reason},
         )
 
+    # ── Stage 2: pre-LLM guardrails ──
     security = ((core.config or {}).get("security")) or {}
     threshold_for_gate = core.behavior.get("confidenceThreshold", 0.75)
     pre_block = run_pre_llm_checks(msg, security)
@@ -810,6 +824,7 @@ async def run_turn(
             )
             return ok(turn)
 
+    # ── Stage 3: pending continuations ──
     cont = await _handle_pending_continuations(
         core, state, session_id, msg, started,
         threshold_for_gate=threshold_for_gate, security=security,
@@ -817,6 +832,8 @@ async def run_turn(
     )
     if cont is not None:
         return cont
+
+    # ── Stage 4: resolve (fast-path or LLM) ──
     actions = core.registry.all()
     if not actions and not core.behavior.get("allowChitchat", True):
         return fail(
@@ -882,6 +899,7 @@ async def run_turn(
         usage_parts.append(resolve_usage)
         res = normalize_resolution(raw)
 
+    # ── Stage 5: post-parse guardrails + pending confirmation ──
     resolution = res["resolution"]
     action_name = res["action"]
     action_input = res["input"] or {}
@@ -938,6 +956,7 @@ async def run_turn(
             _debug_print(turn, state, msg)
         return ok(turn)
 
+    # ── Stage 6: clarification ──
     clarify_turn = await _handle_clarification(
         core, state, session_id, msg, started,
         res=res, resolution=resolution, action_name=action_name,
@@ -947,6 +966,8 @@ async def run_turn(
     )
     if clarify_turn is not None:
         return clarify_turn
+
+    # ── Stage 7: terminal resolutions (chitchat / confirm / unsupported) ──
     if resolution in ("chitchat", "unsupported") or (
         resolution != "action" and resolution != "confirm"
     ):
@@ -1027,6 +1048,7 @@ async def run_turn(
                 _debug_print(turn, state, msg)
             return ok(turn)
 
+    # ── Stage 8: validate input, safety-gate, then execute the action ──
     if resolution != "action" or not action_name:
         turn = await _build_turn(
             core,
