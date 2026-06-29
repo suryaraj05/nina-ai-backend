@@ -33,6 +33,24 @@ def test_console_store_is_runtime_instance_of_store():
     assert isinstance(ConsoleStore(), Store)
 
 
+def test_console_store_push_webhook_event_works_and_trims():
+    # Regression: push_webhook_event referenced a module constant
+    # (_MAX_WEBHOOK_EVENTS) that lived in console_app, so it raised NameError
+    # after ConsoleStore was extracted. No test covered this path before.
+    from nina.console_store import _MAX_WEBHOOK_EVENTS
+
+    store = ConsoleStore()  # no load() -> save() is a no-op, no file needed
+    store.push_webhook_event("broken_selector", {"selector": "#x"})
+    events = store.list_webhook_events("broken_selector")
+    assert len(events) == 1
+    assert events[0]["type"] == "broken_selector"
+
+    # Retention cap holds.
+    for i in range(_MAX_WEBHOOK_EVENTS + 50):
+        store.push_webhook_event("ping", {"i": i})
+    assert len(store.webhook_events) <= _MAX_WEBHOOK_EVENTS
+
+
 def test_protocol_surface_is_nonempty_and_sane():
     # Sanity: catches an accidentally-empty/broken Protocol that would make the
     # drift checks above vacuously pass.

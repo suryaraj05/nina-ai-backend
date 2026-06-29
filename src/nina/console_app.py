@@ -34,6 +34,24 @@ import logging
 from .pool import NinaPool
 from .store import Store
 from .console_store import ConsoleStore
+from .console_schemas import (
+    CliTokenIn,
+    KeyIssueIn,
+    KeyVerifyIn,
+    MultiTenantQueryIn,
+    OnboardingPackIn,
+    OrgCreate,
+    RegistrarExportIn,
+    SeoEmbedHealthIn,
+    SeoSitemapIn,
+    SiteContractIn,
+    SiteCreate,
+    SiteLlmConfigIn,
+    WizardApiConnectIn,
+    WizardGenerateIn,
+    WizardInitIn,
+    WizardValidateIn,
+)
 from .crypto import is_production, unseal_llm_config
 from .store_util import issue_key, parse_origin
 from .net_guard import SsrfError, validate_public_url
@@ -210,120 +228,6 @@ else:
     STORE.load(Path(os.environ.get("NINA_CONSOLE_STORE_PATH", "nina_console_store.json")))
 
 POOL = NinaPool()
-
-
-class OrgCreate(BaseModel):
-    name: str
-    ownerEmail: str | None = None
-
-
-class SiteCreate(BaseModel):
-    orgId: str
-    name: str
-    baseUrl: str
-    currency: str = "USD"
-    locales: list[str] = Field(default_factory=lambda: ["en"])
-    markets: list[str] = Field(default_factory=list)
-    allowedOrigins: list[str] = Field(default_factory=list)
-
-
-class KeyIssueIn(BaseModel):
-    siteId: str
-    environment: str = "test"
-    kind: str = "pk"
-
-
-class KeyVerifyIn(BaseModel):
-    apiKey: str
-    siteId: str | None = None
-    origin: str | None = None
-    pageUrl: str | None = None
-    clientIp: str | None = None
-
-
-class CliTokenIn(BaseModel):
-    orgId: str
-    label: str = "default"
-
-
-class WizardInitIn(BaseModel):
-    orgName: str
-    ownerEmail: str | None = None
-    siteName: str
-    baseUrl: str
-    country: str = "IN"
-    currency: str = "INR"
-    languages: list[str] = Field(default_factory=lambda: ["en", "hi"])
-
-
-class WizardApiConnectIn(BaseModel):
-    siteId: str
-    apiBaseUrl: str
-    searchPath: str = "/api/v1/products/search"
-    listCategoriesPath: str = "/api/v1/categories"
-
-
-class WizardGenerateIn(BaseModel):
-    configDir: str
-    strict: bool = True
-    probe: bool = False
-
-
-class WizardValidateIn(BaseModel):
-    agentPath: str
-    strict: bool = True
-    probe: bool = False
-
-
-class RegistrarExportIn(BaseModel):
-    siteId: str
-    outputPath: str
-
-
-class SeoSitemapIn(BaseModel):
-    siteId: str
-    sitemapUrl: str | None = None
-    rawSitemapXml: str | None = None
-
-
-class SeoEmbedHealthIn(BaseModel):
-    siteUrl: str
-
-
-class SiteContractIn(BaseModel):
-    contract: dict[str, Any]
-
-
-class SiteLlmConfigIn(BaseModel):
-    llmConfig: dict[str, Any]
-
-
-class MultiTenantQueryIn(BaseModel):
-    message: str = ""
-    transcript: str = ""
-    sessionId: str
-    page_context: dict[str, Any] | None = None
-    session_hints: dict[str, Any] | None = None
-    confirmed: bool = False
-    replayQueued: bool = False
-
-
-class OnboardingPackIn(BaseModel):
-    siteId: str | None = None
-    siteName: str | None = None
-    baseUrl: str | None = None
-    locales: list[str] = Field(default_factory=lambda: ["en"])
-    markets: list[str] = Field(default_factory=list)
-    allowedOrigins: list[str] = Field(default_factory=list)
-    apiBaseUrl: str | None = None
-    sitemapUrl: str | None = None
-    rawSitemapXml: str | None = None
-    capabilities: list[str] = Field(
-        default_factory=lambda: ["search", "list_categories", "cart", "checkout"]
-    )
-    includeAuth: bool = False
-    includeRisk: bool = False
-    includeSkills: bool = True
 
 
 def create_app() -> FastAPI:

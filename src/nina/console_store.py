@@ -32,6 +32,9 @@ from .store_util import (
 # Serializes writes to the JSON file (single-process dev store).
 _STORE_WRITE_LOCK = threading.Lock()
 
+# Cap retained webhook events so the JSON file can't grow unbounded.
+_MAX_WEBHOOK_EVENTS = 500
+
 
 def _hash_key(raw: str) -> str:
     # Canonical HMAC-SHA256, shared with PgStore (see crypto.hash_key).
