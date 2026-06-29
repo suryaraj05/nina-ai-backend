@@ -7,7 +7,6 @@ import json
 import sys
 from pathlib import Path
 
-from nina.contract import load_agent
 from nina.contract_validate import validate_executable
 
 

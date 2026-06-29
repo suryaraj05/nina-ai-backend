@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import hmac
-import json
 import os
 import time
 import uuid

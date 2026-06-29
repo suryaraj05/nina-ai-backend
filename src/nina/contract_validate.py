@@ -9,7 +9,6 @@ import httpx
 
 from .contract import (
     expand_api_instruction,
-    get_action,
     get_execute_runtime,
     resolve_selector,
     validate_agent,

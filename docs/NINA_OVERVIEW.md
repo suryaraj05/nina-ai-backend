@@ -291,8 +291,14 @@ src/nina/
   crypto.py            # hashing (HMAC) + Fernet seal/unseal + is_production
   net_guard.py         # SSRF guard (DNS-resolving)
   store_util.py        # shared store helpers (ids, slugs, key issuance)
-  console_app.py       # FastAPI multi-tenant console (the service)
-  pg_store.py          # PostgreSQL store
+  store.py             # Store Protocol (typed seam both stores satisfy)
+  console_app.py       # FastAPI app factory + middleware + router mounts (wiring only)
+  console_deps.py      # STORE/POOL singletons + dashboard-token/ownership guards
+  console_infra.py     # rate limiters, JSON logging, metrics, SSRF/path validators
+  console_schemas.py   # Pydantic request models
+  console_store.py     # ConsoleStore (JSON file store)
+  pg_store.py          # PgStore (PostgreSQL store)
+  console_routes_*.py  # routers by domain: admin, auth, wizard, tools, query, channels
   console_static/      # index.html (onboarding), dashboard.html, admin.html
   sdk/nina-bootstrap.js# the embeddable widget
   scanner/             # nina-scan: framework detectors + per-framework scanners

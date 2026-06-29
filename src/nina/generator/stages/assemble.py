@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from typing import Any
-from urllib.parse import urlparse
 
 from nina.generator.stages.action_infer import _PAGE_ACTIONS, url_pattern_for_type
 

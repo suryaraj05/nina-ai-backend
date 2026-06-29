@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 from .detector import detect_framework
-from .manifest import build_manifest, sign_manifest, verify_checksum
+from .manifest import build_manifest, sign_manifest
 from .verifier import verify_manifest
 
 
