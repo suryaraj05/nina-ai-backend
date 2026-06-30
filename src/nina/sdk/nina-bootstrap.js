@@ -1,5 +1,6 @@
-/* nina-bootstrap.js — NINA conversational commerce widget v4
+/* nina-bootstrap.js — NINA conversational commerce widget v4.1
    Mobile bottom sheet · desktop dock (Gemini-style) or floating · suggestion chips.
+   Session survives same-origin navigations (SPA pushState + sessionStorage).
 */
 (function (W, D) {
   'use strict';
@@ -44,6 +45,9 @@
 
   var SID_KEY = 'nina_sid_' + CFG.siteId;
   var LAYOUT_KEY = 'nina_layout_' + CFG.siteId;
+  var SESSION_KEY = 'nina_session_' + CFG.siteId;
+
+  var _sessionLog = [];
 
   var CHIP_POOLS = {
     home: [
@@ -133,6 +137,43 @@
 
   function setLayoutMode(mode) {
     try { localStorage.setItem(LAYOUT_KEY, mode); } catch (_) {}
+  }
+
+  function loadSession() {
+    try {
+      var raw = sessionStorage.getItem(SESSION_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function saveSession() {
+    try {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+        messages: _sessionLog,
+        products: _lastProducts,
+        panelOpen: _panelOpen,
+      }));
+    } catch (_) {}
+  }
+
+  function navigateTo(url) {
+    saveSession();
+    try {
+      var target = new URL(url, W.location.href);
+      if (target.origin === W.location.origin) {
+        var dest = target.pathname + target.search + target.hash;
+        var current = W.location.pathname + W.location.search + W.location.hash;
+        if (dest !== current) {
+          W.history.pushState({ ninaNav: 1 }, '', dest);
+          W.dispatchEvent(new PopStateEvent('popstate', { state: { ninaNav: 1 } }));
+        }
+        renderChips();
+        return;
+      }
+    } catch (_) {}
+    W.location.assign(url);
   }
 
   function pageKind() {
@@ -442,7 +483,8 @@
   var _msgs;
   function msgBox() { return _msgs || (_msgs = D.getElementById('nina-msgs')); }
 
-  function addRow(role, text) {
+  function addRow(role, text, opts) {
+    opts = opts || {};
     var row = createEl('div', { class: 'nina-row nina-' + role });
     var col = createEl('div', { class: 'nina-col' });
     var bbl = createEl('div', { class: 'nina-bubble' });
@@ -454,12 +496,20 @@
       var footParts = bubbleFoot(role, formatTime(new Date()));
       bbl.appendChild(footParts.foot);
       ticksEl = footParts.ticks;
+      if (opts.restored && role === 'user' && ticksEl) {
+        ticksEl.className = 'nina-ticks nina-tick-read';
+        ticksEl.textContent = '\u2713\u2713';
+      }
     }
     col.appendChild(bbl);
     row.appendChild(col);
     msgBox().appendChild(row);
     msgBox().scrollTop = 99999;
-    if (role === 'user') _lastUserBubble = { row: row, ticks: ticksEl };
+    if (role === 'user' && !opts.restored) _lastUserBubble = { row: row, ticks: ticksEl };
+    if (!opts.skipLog && (role === 'user' || role === 'bot' || role === 'sys')) {
+      _sessionLog.push({ role: role, text: text });
+      saveSession();
+    }
     return bbl;
   }
 
@@ -555,7 +605,8 @@
     rail.classList.add('nina-visible');
   }
 
-  function renderProducts(products, verified) {
+  function renderProducts(products, verified, opts) {
+    opts = opts || {};
     if (!products || !products.length) return;
     _lastProducts = products;
     updateRail(products, verified);
@@ -566,6 +617,10 @@
     row.appendChild(col);
     msgBox().appendChild(row);
     msgBox().scrollTop = 99999;
+    if (!opts.skipLog) {
+      _sessionLog.push({ role: 'products', products: products, verified: verified !== false });
+      saveSession();
+    }
   }
 
   function renderChips(honestExtra) {
@@ -605,7 +660,7 @@
     (instructions || []).forEach(function (ins) {
       var t = ins.type;
       if (t === 'navigate' && ins.url) {
-        W.location.href = ins.url;
+        navigateTo(ins.url);
       } else if ((t === 'fetch' || t === 'api_call') && ins.url) {
         var targetUrl;
         try { targetUrl = new URL(ins.url, W.location.href); } catch (_) { return; }
@@ -716,7 +771,7 @@
         if (loginUrl) {
           var row = createEl('div', { class: 'nina-confirm-row' });
           row.innerHTML = '<button class="nina-yes">Sign in</button>';
-          row.querySelector('.nina-yes').onclick = function () { W.location.href = loginUrl; };
+          row.querySelector('.nina-yes').onclick = function () { navigateTo(loginUrl); };
           msgBox().appendChild(row);
           msgBox().scrollTop = 99999;
         }
@@ -860,6 +915,7 @@
     function open() {
       isOpen = true;
       _panelOpen = true;
+      saveSession();
       applyLayoutMode();
       panel.classList.add('nina-open');
       backdrop.classList.add('nina-visible');
@@ -892,6 +948,7 @@
     function close(fromDrag) {
       isOpen = false;
       _panelOpen = false;
+      saveSession();
       sheetState = 'closed';
       panel.classList.remove('nina-open', 'nina-half', 'nina-full', 'nina-dragging');
       backdrop.classList.remove('nina-visible');
@@ -1030,6 +1087,26 @@
     applyLayoutMode();
     renderChips();
     _openPanelFn = open;
+
+    function restoreSession() {
+      var data = loadSession();
+      if (!data || !data.messages || !data.messages.length) return false;
+      _sessionLog = data.messages.slice();
+      data.messages.forEach(function (m) {
+        if (m.role === 'products' && m.products && m.products.length) {
+          renderProducts(m.products, m.verified !== false, { skipLog: true });
+        } else if (m.text) {
+          addRow(m.role, m.text, { skipLog: true, restored: true });
+        }
+      });
+      greeted = true;
+      if (data.panelOpen && !isMobileSheet()) {
+        setTimeout(function () { if (!isOpen) open(); }, 0);
+      }
+      return true;
+    }
+
+    restoreSession();
   }
 
   if (D.readyState === 'loading') {
