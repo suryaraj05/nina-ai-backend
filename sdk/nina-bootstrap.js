@@ -101,6 +101,8 @@
   var _lastProducts = [];
   var _lastCartCount = null;
   var _currentChipTexts = [];
+  var _panelOpen = false;
+  var _openPanelFn = null;
 
   function getSid() {
     var sid = localStorage.getItem(SID_KEY);
@@ -506,7 +508,11 @@
       body.appendChild(meta);
     }
     var price = createEl('div', { class: 'nina-card-price' });
-    if (p.price != null && p.price !== '') price.textContent = (p.currency || '') + p.price;
+    if (p.price != null && p.price !== '') {
+      var cur = p.currency || '';
+      var sym = cur === 'INR' ? '₹' : (cur ? cur + ' ' : '');
+      price.textContent = sym + p.price;
+    }
     body.appendChild(price);
     var btn = createEl('button', { class: 'nina-card-btn', type: 'button' });
     btn.textContent = p.cta || 'Add to Cart';
@@ -553,7 +559,6 @@
     if (!products || !products.length) return;
     _lastProducts = products;
     updateRail(products, verified);
-    if (isDockedOpen()) return;
     var wrap = buildProductsWrap(products, { verified: verified });
     var row = createEl('div', { class: 'nina-row nina-bot' });
     var col = createEl('div', { class: 'nina-col' });
@@ -656,6 +661,7 @@
     var verified = result.grounded === true || (turn.products && turn.products.length > 0);
     if (turn.products && turn.products.length) {
       renderProducts(turn.products, verified);
+      if (!isMobileSheet() && !_panelOpen && _openPanelFn) _openPanelFn();
     } else {
       _lastProducts = [];
       updateRail([], verified);
@@ -853,6 +859,7 @@
 
     function open() {
       isOpen = true;
+      _panelOpen = true;
       applyLayoutMode();
       panel.classList.add('nina-open');
       backdrop.classList.add('nina-visible');
@@ -884,6 +891,7 @@
 
     function close(fromDrag) {
       isOpen = false;
+      _panelOpen = false;
       sheetState = 'closed';
       panel.classList.remove('nina-open', 'nina-half', 'nina-full', 'nina-dragging');
       backdrop.classList.remove('nina-visible');
@@ -1021,6 +1029,7 @@
 
     applyLayoutMode();
     renderChips();
+    _openPanelFn = open;
   }
 
   if (D.readyState === 'loading') {

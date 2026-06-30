@@ -28,12 +28,37 @@ _QUESTION_STARTERS = (
     "when ",
     "where ",
     "who ",
-    "can you ",
-    "could you ",
     "would you ",
     "is there ",
     "are there ",
 )
+_POLITE_PREFIXES = (
+    "can you please ",
+    "could you please ",
+    "please ",
+    "can you ",
+    "could you ",
+    "will you ",
+    "would you ",
+)
+
+
+def _normalize_for_search(message: str) -> str:
+    """Strip polite/question wrappers so 'can you show me hoodies' → 'show me hoodies'."""
+    text = message.strip().rstrip(".!?")
+    if not text:
+        return text
+    lower = text.lower()
+    changed = True
+    while changed:
+        changed = False
+        for prefix in sorted(_POLITE_PREFIXES, key=len, reverse=True):
+            if lower.startswith(prefix):
+                text = text[len(prefix) :].strip()
+                lower = text.lower()
+                changed = True
+                break
+    return text
 
 
 def _strip_search_prefix(message: str) -> str | None:
@@ -60,10 +85,11 @@ def _whole_message_as_query(message: str) -> str | None:
 
 
 def infer_search_query(user_message: str) -> str | None:
-    stripped = _strip_search_prefix(user_message)
+    normalized = _normalize_for_search(user_message)
+    stripped = _strip_search_prefix(normalized)
     if stripped:
         return stripped
-    return _whole_message_as_query(user_message)
+    return _whole_message_as_query(normalized)
 
 
 def _enum_values(schema: dict[str, Any], field: str) -> list[str]:

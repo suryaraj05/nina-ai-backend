@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .catalog_rail import is_grounded_result, storefront_browse_url
 from .contract import (
     expand_dom_steps,
     expand_execute_steps,
@@ -11,6 +12,29 @@ from .contract import (
     get_execute_runtime,
     resolve_intent,
 )
+
+_SEARCH_ACTIONS = frozenset({"search", "search_products", "list_products", "browse_products"})
+
+
+def _grounded_search_instructions(
+    contract: dict[str, Any],
+    action_id: str,
+    turn: dict[str, Any],
+) -> list[dict[str, Any]] | None:
+    """Catalog-backed search: show cards in chat; browse store with keyword URL only."""
+    result = turn.get("actionResult")
+    if action_id not in _SEARCH_ACTIONS or not is_grounded_result(result or {}):
+        return None
+    count = int((result or {}).get("count") or 0)
+    if count <= 0:
+        return []
+    params = turn.get("actionInput") or turn.get("params") or {}
+    query = str(params.get("query") or "")
+    base_url = (contract.get("site") or {}).get("baseUrl") or ""
+    url = storefront_browse_url(query, base_url)
+    if url:
+        return [{"type": "navigate", "url": url}]
+    return []
 
 
 def turn_to_instructions(
@@ -38,6 +62,10 @@ def turn_to_instructions(
     action = get_action(contract, action_id)
     if not action:
         return []
+
+    grounded = _grounded_search_instructions(contract, action_id, turn)
+    if grounded is not None:
+        return grounded
 
     page_id = (page_context or {}).get("pageId")
     params = turn.get("actionInput") or turn.get("params") or {}

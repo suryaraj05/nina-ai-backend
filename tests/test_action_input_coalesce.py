@@ -1,6 +1,28 @@
 from nina.action_input_coalesce import coalesce_action_input, infer_search_query
 
 
+def test_infer_search_query_can_you_show_me():
+    assert infer_search_query("can you show me hoodies under 3000") == "hoodies under 3000"
+
+
+def test_infer_search_query_could_you_show_me():
+    assert infer_search_query("Could you show me the jackets?") == "jackets"
+
+
+def test_coalesce_fills_can_you_show_me():
+    out = coalesce_action_input(
+        "search_products",
+        {},
+        "can you show me hoodies under 3000",
+        {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+    )
+    assert out == {"query": "hoodies under 3000"}
+
+
 def test_infer_search_query_from_show_me():
     assert infer_search_query("Show me hoodies") == "hoodies"
 

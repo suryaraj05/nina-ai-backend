@@ -201,6 +201,21 @@ def _match_score(tokens: list[str], product: CatalogProduct) -> float:
     return hits / len(tokens)
 
 
+def storefront_browse_url(query: str, base_url: str) -> str | None:
+    """Build a store search URL using keywords only — not the full NL phrase."""
+    if not base_url:
+        return None
+    text, _ = parse_price_constraint(query or "")
+    tokens = _query_tokens(text)
+    root = base_url.rstrip("/")
+    if not tokens:
+        return f"{root}/shop"
+    keyword = tokens[0] if len(tokens) == 1 else " ".join(tokens[:2])
+    from urllib.parse import quote
+
+    return f"{root}/shop?search={quote(keyword)}"
+
+
 def execute_catalog_search(
     action_input: dict[str, Any],
     catalog_rows: list[dict[str, Any]],
