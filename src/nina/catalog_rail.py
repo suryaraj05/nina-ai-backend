@@ -27,6 +27,10 @@ _PRICE_CLAUSE = re.compile(
     re.IGNORECASE,
 )
 _CURRENCY_NOISE = re.compile(r"(?:₹|rs\.?|inr)\s*", re.IGNORECASE)
+_GENERIC_BROWSE_TOKENS = frozenset({
+    "product", "products", "item", "items", "stuff", "things",
+    "anything", "something", "everything", "all", "browse",
+})
 
 
 @dataclass
@@ -142,11 +146,20 @@ class CatalogGraph:
         if not tokens and not max_price:
             return []
 
+        meaningful = [t for t in tokens if t not in _GENERIC_BROWSE_TOKENS]
+        if not meaningful and max_price is not None:
+            priced = [
+                p for p in self._by_sku.values()
+                if p.price is not None and p.price <= max_price
+            ]
+            priced.sort(key=lambda p: (p.price or 0, p.name))
+            return priced[:limit]
+
         scored: list[tuple[float, CatalogProduct]] = []
         for product in self._by_sku.values():
             if max_price is not None and product.price is not None and product.price > max_price:
                 continue
-            score = _match_score(tokens, product)
+            score = _match_score(meaningful, product)
             if score > 0:
                 scored.append((score, product))
 

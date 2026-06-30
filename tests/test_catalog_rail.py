@@ -47,6 +47,14 @@ def test_catalog_search_filters_by_price():
     assert out["results"][0]["sku"] == "h1"
 
 
+def test_catalog_search_price_only_generic_query():
+    out = execute_catalog_search({"query": "show me products under 3000"}, SAMPLE_ROWS)
+    assert out["grounded"] is True
+    assert out["count"] == 2
+    skus = {r["sku"] for r in out["results"]}
+    assert skus == {"h1", "t1"}
+
+
 def test_catalog_search_empty_is_honest():
     out = execute_catalog_search({"query": "unicorn jacket"}, SAMPLE_ROWS)
     assert out["grounded"] is True
