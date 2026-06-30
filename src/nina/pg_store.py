@@ -86,6 +86,10 @@ def _site_row(row: dict[str, Any]) -> dict[str, Any]:
         site["agentContract"] = _jl(row["agent_contract"])
     if row.get("product_catalog"):
         site["productCatalog"] = _jl(row["product_catalog"]) or []
+    if row.get("firestore_project"):
+        site["firestoreProject"] = row["firestore_project"]
+    if row.get("catalog_source"):
+        site["catalogSource"] = row["catalog_source"]
     if row.get("llm_config"):
         site["llmConfig"] = _jl(row["llm_config"])
     if row.get("wa_number_id"):
@@ -367,6 +371,8 @@ class PgStore:
             "locales":      "locales",
             "markets":      "markets",
             "allowedOrigins": "allowed_origins",
+            "firestoreProject": "firestore_project",
+            "catalogSource": "catalog_source",
         }
         parts = []
         values = []
@@ -782,6 +788,8 @@ CREATE TABLE IF NOT EXISTS nina_sites (
     agent_contract TEXT, product_catalog TEXT, llm_config TEXT, wa_number_id TEXT, created_at TEXT NOT NULL
 );
 ALTER TABLE nina_sites ADD COLUMN IF NOT EXISTS product_catalog TEXT;
+ALTER TABLE nina_sites ADD COLUMN IF NOT EXISTS firestore_project TEXT;
+ALTER TABLE nina_sites ADD COLUMN IF NOT EXISTS catalog_source TEXT;
 CREATE INDEX IF NOT EXISTS nina_sites_org_id ON nina_sites(org_id);
 CREATE TABLE IF NOT EXISTS nina_api_keys (
     id TEXT PRIMARY KEY, site_id TEXT NOT NULL REFERENCES nina_sites(id),

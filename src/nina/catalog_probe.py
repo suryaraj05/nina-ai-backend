@@ -13,6 +13,10 @@ from .catalog_rail import CatalogProduct, rows_from_products
 from .static_site_probe import discover_paths, _origin
 
 _FB_PROJECT = re.compile(r'["\']?projectId["\']?\s*[:=]\s*["\']([a-z0-9\-]+)["\']', re.IGNORECASE)
+_FB_AUTH_DOMAIN = re.compile(
+    r'["\']?authDomain["\']?\s*[:=]\s*["\']([a-z0-9\-]+)\.firebaseapp\.com["\']',
+    re.IGNORECASE,
+)
 _FB_APIKEY = re.compile(r'["\']?apiKey["\']?\s*[:=]\s*["\'](AIza[0-9A-Za-z_\-]{20,})["\']')
 _LD_BLOCK = re.compile(
     r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
@@ -119,9 +123,44 @@ def _extract_jsonld_products(html: str) -> list[CatalogProduct]:
     return out
 
 
+def _firestore_project_in_text(text: str) -> str | None:
+    if not text:
+        return None
+    match = _FB_PROJECT.search(text)
+    if match:
+        return match.group(1)
+    match = _FB_AUTH_DOMAIN.search(text)
+    if match:
+        return match.group(1)
+    return None
+
+
 def _detect_firestore_project(html: str, bundle_text: str) -> str | None:
-    match = _FB_PROJECT.search(f"{html}\n{bundle_text}")
-    return match.group(1) if match else None
+    return _firestore_project_in_text(f"{html}\n{bundle_text}")
+
+
+def _detect_firestore_project_from_scripts(
+    client: httpx.Client,
+    storefront_url: str,
+    html: str,
+) -> str | None:
+    """Scan homepage + linked JS without truncating large bundles."""
+    project = _firestore_project_in_text(html or "")
+    if project:
+        return project
+    origin = _origin(storefront_url)
+    for src in _SCRIPT_SRC.findall(html or "")[:12]:
+        js_url = src if src.startswith("http") else urljoin(origin + "/", src.lstrip("/"))
+        try:
+            resp = client.get(js_url, timeout=20.0)
+        except httpx.HTTPError:
+            continue
+        if resp.status_code != 200:
+            continue
+        project = _firestore_project_in_text(resp.text)
+        if project:
+            return project
+    return None
 
 
 def _try_firestore_rest(client: httpx.Client, project: str) -> list[CatalogProduct]:
@@ -179,7 +218,11 @@ def _jsonld_from_paths(
     return out
 
 
-def pull_product_catalog(storefront_url: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def pull_product_catalog(
+    storefront_url: str,
+    *,
+    firestore_project: str | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Return (catalog rows, meta). Never invents rows — empty list on failure."""
     meta: dict[str, Any] = {"source": "none", "productCount": 0}
     with httpx.Client(timeout=30.0, follow_redirects=True) as client:
@@ -190,8 +233,12 @@ def pull_product_catalog(storefront_url: str) -> tuple[list[dict[str, Any]], dic
             meta["error"] = str(exc)
             return [], meta
 
-        bundle_text = _collect_bundle_text(client, storefront_url, html)
-        project = _detect_firestore_project(html, bundle_text)
+        project = (firestore_project or "").strip() or None
+        if not project:
+            project = _detect_firestore_project_from_scripts(client, storefront_url, html)
+        if not project:
+            bundle_text = _collect_bundle_text(client, storefront_url, html)
+            project = _detect_firestore_project(html, bundle_text)
         meta["firestoreProject"] = project
 
         products: list[CatalogProduct] = []

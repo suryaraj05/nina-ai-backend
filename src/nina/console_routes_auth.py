@@ -130,6 +130,13 @@ async def merchant_generate_from_url(site_id: str, body: dict[str, Any], authori
         contract, meta, catalog = generate_contract_from_url(site, api_base_url, runtime=runtime)
         STORE.attach_contract(site_id, contract)
         STORE.attach_product_catalog(site_id, catalog)
+        catalog_fields: dict[str, Any] = {}
+        if meta.get("firestoreProject"):
+            catalog_fields["firestoreProject"] = meta["firestoreProject"]
+        if meta.get("catalogSource"):
+            catalog_fields["catalogSource"] = meta["catalogSource"]
+        if catalog_fields:
+            STORE.update_site_fields(site_id, **catalog_fields)
         POOL.evict(site_id)
         return {"ok": True, "data": {"siteId": site_id, **meta}}
     except ValueError as exc:

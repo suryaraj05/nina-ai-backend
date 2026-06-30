@@ -87,6 +87,12 @@ async def multi_tenant_query(
         )
 
     page_context = body.page_context or {}
+    from .catalog_hydrate import ensure_site_catalog
+
+    catalog, _cat_meta = ensure_site_catalog(STORE, site)
+    if _cat_meta.get("hydrated") and catalog:
+        POOL.evict(site["id"])
+
     _t0 = time.time()
     envelope = await POOL.run(
         site["id"],
@@ -97,7 +103,7 @@ async def multi_tenant_query(
         session_hints=body.session_hints,
         page_id=page_context.get("pageId"),
         replay_queued=body.replayQueued,
-        product_catalog=site.get("productCatalog") or [],
+        product_catalog=catalog,
     )
     if envelope.get("ok") and envelope.get("data"):
         from .instructions import turn_to_instructions
