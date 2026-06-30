@@ -35,7 +35,7 @@ def _prune_history_to_budget(history: list[dict], char_budget: int) -> list[dict
 
 _ITEM_ID_KEYS = ("id", "sku", "productId", "uid")
 _ITEM_NAME_KEYS = ("name", "title", "displayName", "label")
-_LIST_KEYS = ("results", "items", "products", "matches", "hits")
+_LIST_KEYS = ("results", "items", "products", "matches", "hits", "suggestions")
 _ID_PARAM_NAME_RE = re.compile(r"(?:^id$|^sku$|Id$)")
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 _ORDINAL_RE = re.compile(
@@ -98,6 +98,10 @@ def _extract_list(result):
             v = result.get(key)
             if isinstance(v, list) and v and all(isinstance(x, dict) for x in v):
                 return v
+        # Zero-hit search may still carry fallback picks under suggestions only.
+        sug = result.get("suggestions")
+        if isinstance(sug, list) and sug and all(isinstance(x, dict) for x in sug):
+            return sug
     return None
 
 

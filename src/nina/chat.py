@@ -241,6 +241,8 @@ async def _build_turn(
     }
     if products:
         turn["products"] = products
+    if isinstance(action_result, dict) and action_result.get("suggestionChips"):
+        turn["suggestionChips"] = list(action_result["suggestionChips"])
     await _record_turn(state, turn_id, user_message, turn)
     await core.sessions.save(state)
     return turn

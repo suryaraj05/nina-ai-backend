@@ -1,4 +1,4 @@
-/* nina-bootstrap.js — NINA conversational commerce widget v4.2
+/* nina-bootstrap.js — NINA conversational commerce widget v4.3
    Mobile bottom sheet · desktop dock (Gemini-style) or floating · suggestion chips.
    Session survives same-origin navigations (SPA pushState + sessionStorage).
 */
@@ -611,17 +611,31 @@
     }
   }
 
-  function renderChips(honestExtra) {
+  function renderChips(honestExtra, turn) {
     var box = D.getElementById('nina-chips');
     if (!box) return;
-    var pool = buildChipPool(honestExtra);
-    var picks = shufflePick(pool, CHIP_SHOW);
+    var serverChips = [];
+    if (turn) {
+      serverChips = turn.suggestionChips
+        || (turn.actionResult && turn.actionResult.suggestionChips)
+        || [];
+    }
+    var pool = serverChips.length
+      ? serverChips.concat(buildChipPool(honestExtra))
+      : buildChipPool(honestExtra);
+    var picks;
+    if (serverChips.length) {
+      var extra = shufflePick(buildChipPool(honestExtra), Math.max(0, CHIP_SHOW - serverChips.length));
+      picks = serverChips.slice(0, CHIP_SHOW).concat(extra).slice(0, CHIP_SHOW);
+    } else {
+      picks = shufflePick(pool, CHIP_SHOW);
+    }
     _currentChipTexts = picks;
     box.innerHTML = '';
     picks.forEach(function (text) {
       var chip = createEl('button', {
         type: 'button',
-        class: 'nina-chip' + (honestExtra && text === honestExtra ? ' nina-chip-honest' : ''),
+        class: 'nina-chip' + ((honestExtra && text === honestExtra) || serverChips.indexOf(text) >= 0 ? ' nina-chip-honest' : ''),
       });
       chip.textContent = text;
       chip.disabled = _busy;
@@ -708,7 +722,7 @@
     }
 
     var honest = honestRetryChip(turn, userQuery);
-    renderChips(honest);
+    renderChips(honest, turn);
     maybeCartPulse(turn);
   }
 

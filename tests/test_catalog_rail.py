@@ -59,7 +59,28 @@ def test_catalog_search_empty_is_honest():
     out = execute_catalog_search({"query": "unicorn jacket"}, SAMPLE_ROWS)
     assert out["grounded"] is True
     assert out["count"] == 0
+    assert not out.get("suggestions")
     assert grounded_reply("search_products", out) == "I couldn't find anything matching that in the catalog."
+
+
+def test_catalog_search_zero_offers_alternatives_when_possible():
+    out = execute_catalog_search({"query": "hoodies under 1100"}, SAMPLE_ROWS)
+    assert out["grounded"] is True
+    assert out["count"] == 0
+    assert out.get("alternatives") is True
+    assert len(out.get("suggestions") or []) >= 1
+    skus = {s["sku"] for s in out["suggestions"]}
+    assert skus <= {"h1", "h2"}
+    assert out.get("suggestionChips")
+    reply = grounded_reply("search_products", out)
+    assert "similar options" in reply
+
+
+def test_catalog_search_plural_matches_singular_name():
+    graph = CatalogGraph().load_rows(SAMPLE_ROWS)
+    hits = graph.search("hoodie under 3000")
+    assert len(hits) == 1
+    assert hits[0].sku == "h1"
 
 
 def test_catalog_search_no_catalog():

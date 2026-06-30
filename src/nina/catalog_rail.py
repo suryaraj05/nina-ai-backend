@@ -201,17 +201,115 @@ def _query_tokens(text: str) -> list[str]:
     ]
 
 
+def _token_variants(token: str) -> list[str]:
+    """Plural/singular variants so 'hoodies' matches 'hoodie'."""
+    out = [token]
+    if token.endswith("ies") and len(token) > 4:
+        out.append(token[:-3] + "y")
+    if token.endswith("s") and len(token) > 3 and not token.endswith("ss"):
+        out.append(token[:-1])
+    return out
+
+
+def _haystack(product: CatalogProduct) -> str:
+    return " ".join(
+        x for x in (product.name, product.category or "", product.sku) if x
+    ).lower()
+
+
+def _loose_token_hits(tokens: list[str], product: CatalogProduct) -> int:
+    if not tokens:
+        return 0
+    hay = _haystack(product)
+    hits = 0
+    for token in tokens:
+        if any(v in hay for v in _token_variants(token)):
+            hits += 1
+    return hits
+
+
 def _match_score(tokens: list[str], product: CatalogProduct) -> float:
     if not tokens:
         return 0.0
-    hay = " ".join(
-        x for x in (product.name, product.category or "", product.sku) if x
-    ).lower()
-    hits = sum(1 for t in tokens if t in hay)
+    hay = _haystack(product)
+    hits = 0
+    for token in tokens:
+        if any(v in hay for v in _token_variants(token)):
+            hits += 1
     if hits == 0:
         ratio = difflib.SequenceMatcher(None, " ".join(tokens), hay).ratio()
         return ratio if ratio >= 0.55 else 0.0
     return hits / len(tokens)
+
+
+def build_catalog_suggestions(
+    graph: CatalogGraph,
+    query: str,
+    *,
+    max_price: float | None = None,
+    limit: int = 4,
+) -> list[CatalogProduct]:
+    """Fallback picks when the strict search returns nothing."""
+    if not len(graph):
+        return []
+    text, price_cap = parse_price_constraint(query)
+    if max_price is None:
+        max_price = price_cap
+    tokens = [t for t in _query_tokens(text) if t not in _GENERIC_BROWSE_TOKENS]
+
+    if price_cap is not None:
+        relaxed = graph.search(text, max_price=None, limit=limit)
+        if relaxed:
+            return relaxed[:limit]
+
+    if tokens:
+        loose: list[tuple[float, CatalogProduct]] = []
+        for product in graph._by_sku.values():
+            hits = _loose_token_hits(tokens, product)
+            if hits > 0:
+                loose.append((hits / len(tokens), product))
+        loose.sort(key=lambda x: (-x[0], x[1].price or 0, x[1].name))
+        if loose:
+            return [p for _, p in loose[:limit]]
+
+    if price_cap is not None:
+        ceiling = price_cap * 1.5
+        near = [
+            p for p in graph._by_sku.values()
+            if p.in_stock and p.price is not None and price_cap < p.price <= ceiling
+        ]
+        if tokens:
+            filtered = [p for p in near if _loose_token_hits(tokens, p) > 0]
+            if filtered:
+                near = filtered
+        near.sort(key=lambda p: (p.price or 0, p.name))
+        if near:
+            return near[:limit]
+
+    return []
+
+
+def build_suggestion_chips(
+    query: str,
+    products: list[CatalogProduct],
+    *,
+    max_price: float | None = None,
+    limit: int = 4,
+) -> list[str]:
+    chips: list[str] = []
+    _, price_cap = parse_price_constraint(query)
+    cap = max_price if max_price is not None else price_cap
+    text, _ = parse_price_constraint(query)
+    tokens = [t for t in _query_tokens(text) if t not in _GENERIC_BROWSE_TOKENS]
+    if cap is not None and tokens:
+        bumped = int(cap * 1.5)
+        label = " ".join(tokens[:2])
+        chips.append(f"Show {label} under ₹{bumped}")
+    for product in products[:3]:
+        chips.append(f"Add {product.name} to cart")
+    if not chips:
+        chips.append("Browse all products")
+    return chips[:limit]
 
 
 def storefront_browse_url(query: str, base_url: str) -> str | None:
@@ -244,11 +342,32 @@ def execute_catalog_search(
         }
     query = str((action_input or {}).get("query") or "").strip()
     graph = graph_from_rows(catalog_rows)
+    text, price_cap = parse_price_constraint(query)
     products = graph.search(query, limit=8)
-    results = [p.to_result_row(base_url=base_url) for p in products]
+    if products:
+        results = [p.to_result_row(base_url=base_url) for p in products]
+        return {
+            "results": results,
+            "count": len(results),
+            "grounded": True,
+            "query": query,
+        }
+
+    suggestions = build_catalog_suggestions(graph, query, max_price=price_cap, limit=4)
+    if suggestions:
+        sug_rows = [p.to_result_row(base_url=base_url) for p in suggestions]
+        return {
+            "results": [],
+            "count": 0,
+            "grounded": True,
+            "query": query,
+            "suggestions": sug_rows,
+            "suggestionChips": build_suggestion_chips(query, suggestions, max_price=price_cap),
+            "alternatives": True,
+        }
     return {
-        "results": results,
-        "count": len(results),
+        "results": [],
+        "count": 0,
         "grounded": True,
         "query": query,
     }
@@ -309,6 +428,11 @@ def grounded_reply(action_name: str, result: dict[str, Any]) -> str:
     count = int(result.get("count") or 0)
     if action_name in _SEARCH_ACTIONS:
         if count == 0:
+            if result.get("alternatives") and result.get("suggestions"):
+                return (
+                    "I couldn't find an exact match, but here are some "
+                    "similar options you can try instead."
+                )
             return "I couldn't find anything matching that in the catalog."
         return f"I found {count} item{'s' if count != 1 else ''} in the catalog."
     return _deterministic_short(result)
