@@ -14,17 +14,21 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, HTTPException, Response
 
-from .console_deps import STORE
+from .console_deps import POOL, STORE
 from .console_infra import _validate_external_url
 from .console_pack import build_onboarding_pack_files, resolve_site_fields, zip_onboarding_pack
 from .console_schemas import (
     OnboardingPackIn,
     WizardApiConnectIn,
+    WizardGenerateFromUrlIn,
     WizardGenerateIn,
     WizardInitIn,
     WizardValidateIn,
+    SiteContractIn,
 )
+from .contract_generate import generate_contract_from_url
 from .contract_validate import validate_executable
+from .crypto import is_production
 from .generator.pipeline import run_pipeline
 
 router = APIRouter()
@@ -43,6 +47,41 @@ def wizard_init(body: WizardInitIn) -> dict[str, Any]:
     )
     key = STORE.issue_api_key(site["id"], "test", "pk")
     return {"ok": True, "data": {"org": org, "site": site, "publishableKey": key}}
+
+
+@router.post("/v1/wizard/generate-from-url")
+def wizard_generate_from_url(body: WizardGenerateFromUrlIn) -> dict[str, Any]:
+    """Onboarding step 2 — uses admin auth via BFF (no dashboard token required)."""
+    site = STORE.get_site(body.siteId)
+    if not site:
+        raise HTTPException(status_code=404, detail="Unknown site_id")
+    if body.runtime not in ("server", "browser"):
+        raise HTTPException(status_code=400, detail="runtime must be 'server' or 'browser'.")
+    if is_production():
+        _validate_external_url(body.apiBaseUrl, "Store URL")
+    try:
+        contract, meta = generate_contract_from_url(site, body.apiBaseUrl, runtime=body.runtime)
+        STORE.attach_contract(body.siteId, contract)
+        POOL.evict(body.siteId)
+        return {"ok": True, "data": {"siteId": body.siteId, **meta}}
+    except ValueError as exc:
+        return {"ok": False, "errors": [str(exc)]}
+
+
+@router.put("/v1/wizard/sites/{site_id}/contract")
+def wizard_set_contract(site_id: str, body: SiteContractIn) -> dict[str, Any]:
+    """Onboarding manual contract upload — admin auth via BFF."""
+    if not STORE.get_site(site_id):
+        raise HTTPException(status_code=404, detail="Unknown site_id")
+    if not body.contract:
+        raise HTTPException(status_code=400, detail="contract field required.")
+    try:
+        STORE.attach_contract(site_id, body.contract)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    POOL.evict(site_id)
+    return {"ok": True, "data": {"siteId": site_id, "contractAttached": True}}
+
 
 @router.post("/v1/wizard/connect-apis")
 def wizard_connect_apis(body: WizardApiConnectIn) -> dict[str, Any]:

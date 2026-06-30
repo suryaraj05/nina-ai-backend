@@ -63,6 +63,12 @@ class WizardApiConnectIn(BaseModel):
     listCategoriesPath: str = "/api/v1/categories"
 
 
+class WizardGenerateFromUrlIn(BaseModel):
+    siteId: str
+    apiBaseUrl: str
+    runtime: str = "server"
+
+
 class WizardGenerateIn(BaseModel):
     configDir: str
     strict: bool = True
