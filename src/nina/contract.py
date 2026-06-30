@@ -15,8 +15,18 @@ from .api_template import apply_params_to_string, build_request_body, resolve_ap
 _SCHEMAS_DIR = Path(__file__).resolve().parents[2] / "schemas"
 
 
+def _schemas_dir() -> Path:
+    """Locate schemas/ in dev (repo root), Docker (/app/schemas), or editable installs."""
+    here = Path(__file__).resolve()
+    for base in (here.parents[2], here.parents[1], Path("/app"), Path.cwd()):
+        candidate = base / "schemas"
+        if (candidate / "agent.schema.json").is_file():
+            return candidate
+    return _SCHEMAS_DIR
+
+
 def _load_schema(name: str) -> dict[str, Any]:
-    path = _SCHEMAS_DIR / name
+    path = _schemas_dir() / name
     with path.open(encoding="utf-8") as f:
         return json.load(f)
 

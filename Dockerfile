@@ -7,8 +7,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Python deps
+# Python deps + JSON schemas (contract validation)
 COPY pyproject.toml ./
+COPY schemas/ ./schemas/
 COPY src/ ./src/
 
 RUN pip install --no-cache-dir -e . \
