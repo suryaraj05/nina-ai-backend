@@ -1,4 +1,4 @@
-/* nina-bootstrap.js — NINA conversational commerce widget v4.1
+/* nina-bootstrap.js — NINA conversational commerce widget v4.2
    Mobile bottom sheet · desktop dock (Gemini-style) or floating · suggestion chips.
    Session survives same-origin navigations (SPA pushState + sessionStorage).
 */
@@ -585,43 +585,26 @@
     return wrap;
   }
 
-  function isDockedOpen() {
-    var panel = D.getElementById('nina-panel');
-    return panel && panel.classList.contains('nina-mode-dock') && panel.classList.contains('nina-open');
-  }
-
-  function updateRail(products, verified) {
+  function hideProductRail() {
     var rail = D.getElementById('nina-rail');
     var inner = D.getElementById('nina-rail-inner');
     if (!rail || !inner) return;
-    if (!products || !products.length || !isDockedOpen()) {
-      rail.classList.remove('nina-visible');
-      inner.innerHTML = '';
-      return;
-    }
-    _lastProducts = products;
+    rail.classList.remove('nina-visible');
     inner.innerHTML = '';
-    inner.appendChild(buildProductsWrap(products, { verified: verified }));
-    rail.classList.add('nina-visible');
   }
 
   function renderProducts(products, verified, opts) {
     opts = opts || {};
     if (!products || !products.length) return;
     _lastProducts = products;
-    var dockOnly = isDockedOpen();
-    if (dockOnly) {
-      updateRail(products, verified);
-    } else {
-      updateRail(products, verified);
-      var wrap = buildProductsWrap(products, { verified: verified });
-      var row = createEl('div', { class: 'nina-row nina-bot' });
-      var col = createEl('div', { class: 'nina-col' });
-      col.appendChild(wrap);
-      row.appendChild(col);
-      msgBox().appendChild(row);
-      msgBox().scrollTop = 99999;
-    }
+    hideProductRail();
+    var wrap = buildProductsWrap(products, { verified: verified });
+    var row = createEl('div', { class: 'nina-row nina-bot' });
+    var col = createEl('div', { class: 'nina-col' });
+    col.appendChild(wrap);
+    row.appendChild(col);
+    msgBox().appendChild(row);
+    msgBox().scrollTop = 99999;
     if (!opts.skipLog) {
       _sessionLog.push({ role: 'products', products: products, verified: verified !== false });
       saveSession();
@@ -932,9 +915,6 @@
       panel.classList.toggle('nina-mode-dock', !mobile && isDockMode());
       D.body.classList.toggle('nina-dock-open', !mobile && isDockMode() && isOpen);
       updateLayoutButton();
-      if (!mobile && isOpen && isDockMode() && _lastProducts.length) {
-        updateRail(_lastProducts, true);
-      }
       if (!mobile && isOpen && !isDockMode()) {
         panel.style.height = '';
       }
@@ -991,8 +971,6 @@
       } else {
         renderChips();
       }
-
-      if (isDockMode() && _lastProducts.length) updateRail(_lastProducts, true);
     }
 
     function close(fromDrag) {
@@ -1007,7 +985,7 @@
       panel.style.height = '';
       if (!fromDrag && isMobileSheet()) panel.style.transform = 'translateY(100%)';
       var rail = D.getElementById('nina-rail');
-      if (rail) rail.classList.remove('nina-visible');
+      if (rail) hideProductRail();
     }
 
     function toggleLayout() {
@@ -1015,7 +993,6 @@
       layoutMode = isDockMode() ? 'float' : 'dock';
       setLayoutMode(layoutMode);
       applyLayoutMode();
-      if (isOpen && isDockMode() && _lastProducts.length) updateRail(_lastProducts, true);
     }
 
     function onDragStart(clientY) {
