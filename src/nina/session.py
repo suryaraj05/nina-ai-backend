@@ -317,6 +317,8 @@ def resolve_product_reference(
     action_name: str,
     action_input: dict[str, Any] | None,
     user_message: str,
+    *,
+    catalog_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Map ordinals and product titles to real ids from lastSearchResults."""
     if action_name not in _PRODUCT_REFERENCE_ACTIONS:
@@ -333,6 +335,19 @@ def resolve_product_reference(
     if rm.get("lastSingleItem"):
         candidates.append(rm["lastSingleItem"])
     picked = _pick_search_candidate(candidates, user_message)
+
+    if not picked and catalog_rows:
+        from .catalog_rail import graph_from_rows
+        hint = _name_hint_from_message(user_message) or user_message
+        product = graph_from_rows(catalog_rows).lookup_name(hint)
+        if product:
+            picked = {
+                "id": product.sku,
+                "sku": product.sku,
+                "name": product.name,
+                "title": product.name,
+            }
+
     if not picked:
         return out
 
@@ -347,6 +362,32 @@ def resolve_product_reference(
             if not out.get(key):
                 out[key] = title
     return out
+
+
+def seed_reference_map_from_client(
+    state: dict[str, Any],
+    session_hints: dict[str, Any] | None,
+) -> None:
+    """Restore lastSearchResults from the widget when server session was lost."""
+    hints = session_hints or {}
+    raw = hints.get("lastSearchResults") or hints.get("visibleProducts")
+    if not isinstance(raw, list) or not raw:
+        return
+    rm = state.setdefault("referenceMap", _empty_reference_map())
+    if rm.get("lastSearchResults"):
+        return
+    rows: list[dict[str, Any]] = []
+    for i, item in enumerate(raw[:10]):
+        if not isinstance(item, dict):
+            continue
+        row = {"index": i + 1, "sourceAction": "widget"}
+        for key in _ITEM_ID_KEYS + _ITEM_NAME_KEYS + ("price", "currency"):
+            if item.get(key) not in (None, ""):
+                row[key] = item[key]
+        if _item_id(row) or _title_of(row):
+            rows.append(row)
+    if rows:
+        rm["lastSearchResults"] = rows
 
 
 def resolve_reference_parameters(state, action_input):

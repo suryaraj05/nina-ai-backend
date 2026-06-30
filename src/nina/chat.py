@@ -13,7 +13,7 @@ from .errors import LLMError, StoreError, fail, now_iso, ok
 from .executor import execute_action
 from .auth_queue import pop_replay_if_ready, save_queued_intent
 from .critic import check_action_alignment
-from .fast_path import try_fast_path
+from .fast_path import try_catalog_search_fast_path, try_fast_path, try_reference_cart_fast_path
 from .guardrails import (
     blocked_turn_payload,
     detect_injection_semantic,
@@ -34,7 +34,13 @@ from .planner import (
 )
 from .reasoner import maybe_reason
 from .responder import compose_chitchat, compose_response
-from .session import products_from_result, resolve_product_reference, resolve_reference_parameters, update_reference_map
+from .session import (
+    products_from_result,
+    resolve_product_reference,
+    resolve_reference_parameters,
+    seed_reference_map_from_client,
+    update_reference_map,
+)
 
 
 def _shape(value):
@@ -357,7 +363,14 @@ async def _execute_action_turn(
         return ok(turn)
 
     state["pending"] = None
-    action_input = resolve_product_reference(state, action_name, action_input, user_message)
+    catalog_rows = (core.config or {}).get("_productCatalog") or []
+    action_input = resolve_product_reference(
+        state,
+        action_name,
+        action_input,
+        user_message,
+        catalog_rows=catalog_rows,
+    )
     action_input = resolve_reference_parameters(state, action_input)
     hooks = core.hooks or {}
     if hooks.get("onActionCall"):
@@ -366,7 +379,6 @@ async def _execute_action_turn(
         except Exception:
             pass
 
-    catalog_rows = (core.config or {}).get("_productCatalog") or []
     ok_mut, mut_reason = validate_catalog_mutation(action_name, action_input, catalog_rows)
     if not ok_mut:
         rm = state.get("referenceMap") or {}
@@ -870,6 +882,11 @@ async def run_turn(
             {"reason": exc.reason},
         )
 
+    seed_reference_map_from_client(
+        state,
+        (core.config or {}).get("_sessionHints"),
+    )
+
     # ── Stage 2: pre-LLM guardrails ──
     security = ((core.config or {}).get("security")) or {}
     threshold_for_gate = core.behavior.get("confidenceThreshold", 0.75)
@@ -910,12 +927,25 @@ async def run_turn(
     fast_path_excluded = frozenset(
         (risk_cfg.get("confirmActions") or []) + (risk_cfg.get("blockActions") or [])
     )
+    catalog_rows = (core.config or {}).get("_productCatalog") or []
     fast_match = try_fast_path(
         msg,
         actions,
         core.fast_path_patterns,
         excluded_actions=fast_path_excluded,
     )
+    if not fast_match:
+        fast_match = try_reference_cart_fast_path(
+            msg,
+            state,
+            actions,
+            excluded_actions=fast_path_excluded,
+            catalog_rows=catalog_rows,
+        )
+    if not fast_match and catalog_rows:
+        fast_match = try_catalog_search_fast_path(
+            msg, actions, excluded_actions=fast_path_excluded,
+        )
 
     enrichment = None
     reasoning_used = False

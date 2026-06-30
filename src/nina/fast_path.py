@@ -92,3 +92,74 @@ def try_fast_path(
             return {"action": action["name"], "input": {}}
 
     return None
+
+
+def try_reference_cart_fast_path(
+    message: str,
+    state: dict[str, Any],
+    actions: list[dict[str, Any]],
+    *,
+    excluded_actions: frozenset[str] = frozenset(),
+    catalog_rows: list[dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    """Skip the LLM when the user picks from visible search results."""
+    from .session import resolve_product_reference, _item_id
+
+    registered = {a["name"]: a for a in actions if a["name"] not in excluded_actions}
+    cart_action = None
+    for name in ("add_to_cart", "add_item_to_cart"):
+        if name in registered:
+            cart_action = name
+            break
+    if not cart_action:
+        return None
+
+    lower = (message or "").lower()
+    if not re.search(r"\b(add|buy|get|take|put)\b", lower):
+        return None
+
+    resolved = resolve_product_reference(
+        state, cart_action, {}, message, catalog_rows=catalog_rows,
+    )
+    if not (_item_id(resolved) or resolved.get("productId") or resolved.get("sku")):
+        return None
+    return {"action": cart_action, "input": resolved}
+
+
+_SEARCH_FAST_STOP = frozenset({
+    "continue", "yes", "no", "ok", "thanks", "thank you", "hello", "hi",
+    "help", "cancel", "stop",
+})
+
+
+def try_catalog_search_fast_path(
+    message: str,
+    actions: list[dict[str, Any]],
+    *,
+    excluded_actions: frozenset[str] = frozenset(),
+) -> dict[str, Any] | None:
+    """Route obvious product searches straight to the catalog search action."""
+    from .action_input_coalesce import infer_search_query
+
+    normalized = _normalize(message)
+    if normalized in _SEARCH_FAST_STOP:
+        return None
+
+    registered = {a["name"]: a for a in actions if a["name"] not in excluded_actions}
+    action = None
+    for name in ("search_products", "search", "list_products", "browse_products"):
+        if name in registered:
+            action = name
+            break
+    if not action:
+        return None
+    query = infer_search_query(message)
+    if not query:
+        return None
+    from .catalog_rail import parse_price_constraint, _query_tokens, _GENERIC_BROWSE_TOKENS
+
+    text, price_cap = parse_price_constraint(query)
+    tokens = [t for t in _query_tokens(text) if t not in _GENERIC_BROWSE_TOKENS]
+    if not tokens and price_cap is None:
+        return None
+    return {"action": action, "input": {"query": query}}

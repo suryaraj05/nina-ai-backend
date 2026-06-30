@@ -722,14 +722,53 @@
     if (turn.products && turn.products.length) {
       renderProducts(turn.products, verified);
       if (!isMobileSheet() && !_panelOpen && _openPanelFn) _openPanelFn();
-    } else {
-      _lastProducts = [];
-      updateRail([], verified);
     }
 
     var honest = honestRetryChip(turn, userQuery);
     renderChips(honest);
     maybeCartPulse(turn);
+  }
+
+  function visibleProductsFromPage() {
+    var out = [];
+    var seen = {};
+    try {
+      D.querySelectorAll('a[href*="/product/"]').forEach(function (a) {
+        var href = a.getAttribute('href') || '';
+        var m = href.match(/\/product\/([^/?#]+)/);
+        if (!m) return;
+        var id = decodeURIComponent(m[1]);
+        if (seen[id]) return;
+        seen[id] = true;
+        var card = a.closest('article, li, [class*="product"]') || a;
+        var titleEl = card.querySelector('h1, h2, h3, h4, [class*="title"], [class*="name"]');
+        var title = titleEl
+          ? (titleEl.textContent || '').trim()
+          : (a.getAttribute('aria-label') || a.textContent || '').trim().split('\n')[0];
+        var priceEl = card.querySelector('[class*="price"]');
+        var price = priceEl ? (priceEl.textContent || '').replace(/[^\d.]/g, '') : undefined;
+        if (id || title) out.push({ id: id, sku: id, title: title, name: title, price: price });
+      });
+    } catch (_) { /* ignore DOM scrape errors */ }
+    return out.slice(0, 10);
+  }
+
+  function clientSearchResults() {
+    var fromWidget = (_lastProducts || []).map(function (p, i) {
+      return {
+        index: i + 1,
+        id: p.id || p.sku || '',
+        sku: p.id || p.sku || '',
+        name: p.title || p.name || '',
+        title: p.title || p.name || '',
+        price: p.price,
+        currency: p.currency,
+      };
+    }).filter(function (r) { return r.id || r.name; });
+    if (fromWidget.length) return fromWidget;
+    return visibleProductsFromPage().map(function (p, i) {
+      return Object.assign({ index: i + 1 }, p);
+    });
   }
 
   function chat(text, opts) {
@@ -752,6 +791,10 @@
         confirmed: !!opts.confirmed,
         replayQueued: !!opts.replayQueued,
         page_context: { url: W.location.href },
+        session_hints: {
+          lastSearchResults: clientSearchResults(),
+          visibleProducts: visibleProductsFromPage(),
+        },
       }),
     })
     .then(function (r) { return r.json(); })
