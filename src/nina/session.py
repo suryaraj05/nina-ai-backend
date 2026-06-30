@@ -4,11 +4,13 @@ from __future__ import annotations
 import inspect
 import json
 import re
+import difflib
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from .errors import StoreError, fail, now_iso, ok
 
-# Approx character budget for retained history (≈1 token per 4 chars). Caps the
+# Approx character budget for retained history (~1 token per 4 chars). Caps the
 # context contributed by history so a few large API-result payloads can't blow
 # past a small model's window even when the turn count is within max_turns.
 _HISTORY_CHAR_BUDGET = 16000  # ~4k tokens
@@ -36,6 +38,28 @@ _ITEM_NAME_KEYS = ("name", "title", "displayName", "label")
 _LIST_KEYS = ("results", "items", "products", "matches", "hits")
 _ID_PARAM_NAME_RE = re.compile(r"(?:^id$|^sku$|Id$)")
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
+_ORDINAL_RE = re.compile(
+    r"\b(?:(\d+)\s*(?:st|nd|rd|th)|(?:the\s+)?(first|second|third|fourth|fifth|last))\b",
+    re.IGNORECASE,
+)
+_ORDINAL_WORDS = {
+    "first": 1,
+    "second": 2,
+    "third": 3,
+    "fourth": 4,
+    "fifth": 5,
+    "last": -1,
+}
+_ADD_TO_CART_RE = re.compile(r"add\s+(.+?)\s+to\s+(?:my\s+)?cart", re.IGNORECASE)
+_PRODUCT_REFERENCE_ACTIONS = frozenset({
+    "add_to_cart",
+    "add_item_to_cart",
+    "remove_from_cart",
+    "update_cart_item",
+    "open_product",
+    "get_detail",
+    "get_product_detail",
+})
 
 
 def _empty_reference_map():
@@ -216,6 +240,113 @@ def update_reference_map(state, action_name, result):
 
 def _slugify(text) -> str:
     return _SLUG_RE.sub("-", str(text).lower()).strip("-")
+
+
+def _ordinal_from_message(user_message: str) -> int | None:
+    for match in _ORDINAL_RE.finditer(user_message or ""):
+        if match.group(1):
+            try:
+                return int(match.group(1))
+            except ValueError:
+                continue
+        word = (match.group(2) or "").lower()
+        if word in _ORDINAL_WORDS:
+            return _ORDINAL_WORDS[word]
+    return None
+
+
+def _name_hint_from_message(user_message: str) -> str | None:
+    text = (user_message or "").strip()
+    add_match = _ADD_TO_CART_RE.search(text)
+    if add_match:
+        return add_match.group(1).strip(" .\"'")
+    return None
+
+
+def _title_of(candidate: dict[str, Any]) -> str | None:
+    return next((candidate.get(k) for k in _ITEM_NAME_KEYS if candidate.get(k)), None)
+
+
+def _pick_search_candidate(
+    candidates: list[dict[str, Any]],
+    user_message: str,
+) -> dict[str, Any] | None:
+    if not candidates:
+        return None
+    ordinal = _ordinal_from_message(user_message)
+    if ordinal is not None:
+        if ordinal == -1:
+            return candidates[-1]
+        for item in candidates:
+            if item.get("index") == ordinal:
+                return item
+        if 1 <= ordinal <= len(candidates):
+            return candidates[ordinal - 1]
+    name_hint = _name_hint_from_message(user_message)
+    msg_lower = (user_message or "").lower()
+    probe = (name_hint or user_message or "").strip().lower()
+    if not probe:
+        return None
+
+    best: dict[str, Any] | None = None
+    best_score = 0.0
+    for item in candidates:
+        title = _title_of(item)
+        if not title:
+            continue
+        title_lower = str(title).lower()
+        score = 0.0
+        if probe == title_lower or title_lower in probe or probe in title_lower:
+            score = 1.0
+        else:
+            score = difflib.SequenceMatcher(None, probe, title_lower).ratio()
+        if score > best_score:
+            best_score = score
+            best = item
+    if best is not None and best_score >= 0.55:
+        return best
+
+    if "it" in msg_lower.split() or "that one" in msg_lower or "this one" in msg_lower:
+        if len(candidates) == 1:
+            return candidates[0]
+    return None
+
+
+def resolve_product_reference(
+    state: dict[str, Any],
+    action_name: str,
+    action_input: dict[str, Any] | None,
+    user_message: str,
+) -> dict[str, Any]:
+    """Map ordinals and product titles to real ids from lastSearchResults."""
+    if action_name not in _PRODUCT_REFERENCE_ACTIONS:
+        return dict(action_input or {})
+    out = dict(action_input or {})
+    if _item_id(out) and str(_item_id(out)) in {
+        str(_item_id(c)) for c in (state.get("referenceMap") or {}).get("lastSearchResults") or []
+        if _item_id(c) is not None
+    }:
+        return out
+
+    rm = state.get("referenceMap") or {}
+    candidates = list(rm.get("lastSearchResults") or [])
+    if rm.get("lastSingleItem"):
+        candidates.append(rm["lastSingleItem"])
+    picked = _pick_search_candidate(candidates, user_message)
+    if not picked:
+        return out
+
+    pid = _item_id(picked)
+    title = _title_of(picked)
+    if pid is not None:
+        for key in ("productId", "variantId", "sku", "id"):
+            if not out.get(key):
+                out[key] = pid
+    if title:
+        for key in ("name", "query", "title"):
+            if not out.get(key):
+                out[key] = title
+    return out
 
 
 def resolve_reference_parameters(state, action_input):

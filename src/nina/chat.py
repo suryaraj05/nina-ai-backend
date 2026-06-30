@@ -34,7 +34,7 @@ from .planner import (
 )
 from .reasoner import maybe_reason
 from .responder import compose_chitchat, compose_response
-from .session import products_from_result, resolve_reference_parameters, update_reference_map
+from .session import products_from_result, resolve_product_reference, resolve_reference_parameters, update_reference_map
 
 
 def _shape(value):
@@ -357,6 +357,7 @@ async def _execute_action_turn(
         return ok(turn)
 
     state["pending"] = None
+    action_input = resolve_product_reference(state, action_name, action_input, user_message)
     action_input = resolve_reference_parameters(state, action_input)
     hooks = core.hooks or {}
     if hooks.get("onActionCall"):
@@ -368,6 +369,8 @@ async def _execute_action_turn(
     catalog_rows = (core.config or {}).get("_productCatalog") or []
     ok_mut, mut_reason = validate_catalog_mutation(action_name, action_input, catalog_rows)
     if not ok_mut:
+        rm = state.get("referenceMap") or {}
+        had_results = bool(rm.get("lastSearchResults"))
         turn = await _build_turn(
             core,
             state,
@@ -377,9 +380,14 @@ async def _execute_action_turn(
             intent="clarification",
             confidence=confidence,
             natural_language_response=(
-                "I can't find that in the verified catalog."
-                if "catalog" in mut_reason
-                else mut_reason.replace("_", " ").capitalize() + "."
+                "I can see that product in the catalog — tap Add to Cart on its card, "
+                "or say \"the second one\" / \"add the gray hoodie\"."
+                if had_results
+                else (
+                    "I can't find that in the verified catalog."
+                    if "catalog" in mut_reason
+                    else mut_reason.replace("_", " ").capitalize() + "."
+                )
             ),
             reasoning_used=reasoning_used,
             reasoning_summary=reasoning_summary,

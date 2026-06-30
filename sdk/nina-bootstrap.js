@@ -609,14 +609,19 @@
     opts = opts || {};
     if (!products || !products.length) return;
     _lastProducts = products;
-    updateRail(products, verified);
-    var wrap = buildProductsWrap(products, { verified: verified });
-    var row = createEl('div', { class: 'nina-row nina-bot' });
-    var col = createEl('div', { class: 'nina-col' });
-    col.appendChild(wrap);
-    row.appendChild(col);
-    msgBox().appendChild(row);
-    msgBox().scrollTop = 99999;
+    var dockOnly = isDockedOpen();
+    if (dockOnly) {
+      updateRail(products, verified);
+    } else {
+      updateRail(products, verified);
+      var wrap = buildProductsWrap(products, { verified: verified });
+      var row = createEl('div', { class: 'nina-row nina-bot' });
+      var col = createEl('div', { class: 'nina-col' });
+      col.appendChild(wrap);
+      row.appendChild(col);
+      msgBox().appendChild(row);
+      msgBox().scrollTop = 99999;
+    }
     if (!opts.skipLog) {
       _sessionLog.push({ role: 'products', products: products, verified: verified !== false });
       saveSession();
@@ -760,7 +765,9 @@
       }
       var turn = data.data;
       var reply = (turn.naturalLanguageResponse || '').trim();
-      if (reply) addRow('bot', reply);
+      var hasProducts = turn.products && turn.products.length;
+      var skipDupReply = hasProducts && /^I found \d+ item/i.test(reply);
+      if (reply && !skipDupReply) addRow('bot', reply);
       handleTurn(turn, userQuery);
       var intent = turn.intent;
       if (intent === 'confirmation') {

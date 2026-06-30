@@ -14,6 +14,18 @@ from .contract import (
 )
 
 _SEARCH_ACTIONS = frozenset({"search", "search_products", "list_products", "browse_products"})
+_CART_FROM_SEARCH_ACTIONS = frozenset({"add_to_cart", "add_item_to_cart"})
+
+
+def _open_product_instructions(
+    contract: dict[str, Any],
+    product_id: str,
+) -> list[dict[str, Any]] | None:
+    open_action = get_action(contract, "open_product")
+    if not open_action or not product_id:
+        return None
+    steps = expand_dom_steps(contract, open_action, {"productId": product_id})
+    return steps or None
 
 
 def _grounded_search_instructions(
@@ -67,8 +79,19 @@ def turn_to_instructions(
     if grounded is not None:
         return grounded
 
-    page_id = (page_context or {}).get("pageId")
     params = turn.get("actionInput") or turn.get("params") or {}
+    if action_id in _CART_FROM_SEARCH_ACTIONS:
+        page_id = (page_context or {}).get("pageId")
+        on_pdp = page_id in ("product_detail", "pdp")
+        product_id = str(
+            params.get("productId") or params.get("sku") or params.get("variantId") or ""
+        ).strip()
+        if product_id and not on_pdp:
+            open_steps = _open_product_instructions(contract, product_id)
+            if open_steps:
+                return open_steps
+
+    page_id = (page_context or {}).get("pageId")
 
     resolved = resolve_intent(
         contract,
