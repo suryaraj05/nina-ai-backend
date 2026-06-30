@@ -17,15 +17,53 @@ _SEARCH_ACTIONS = frozenset({"search", "search_products", "list_products", "brow
 _CART_FROM_SEARCH_ACTIONS = frozenset({"add_to_cart", "add_item_to_cart"})
 
 
+def _product_nav_params(
+    product_id: str,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    """Aliases so open_product templates work whether they use productId or productUrl."""
+    pid = str(product_id).strip()
+    if not pid:
+        return {}
+    path = pid if pid.startswith("/") else f"/product/{pid}"
+    out = {
+        "productId": pid,
+        "id": pid,
+        "sku": pid,
+        "variantId": pid,
+        "productUrl": path,
+        "url": path,
+    }
+    if extra:
+        for key, value in extra.items():
+            if value not in (None, ""):
+                out[str(key)] = str(value)
+    if not out.get("productUrl", "").startswith("/") and out.get("productId"):
+        out["productUrl"] = f"/product/{out['productId']}"
+    return out
+
+
+def _steps_have_unresolved_placeholders(steps: list[dict[str, Any]]) -> bool:
+    for step in steps:
+        url = step.get("url")
+        if isinstance(url, str) and "{" in url and "}" in url:
+            return True
+    return False
+
+
 def _open_product_instructions(
     contract: dict[str, Any],
     product_id: str,
+    extra_params: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]] | None:
     open_action = get_action(contract, "open_product")
     if not open_action or not product_id:
         return None
-    steps = expand_dom_steps(contract, open_action, {"productId": product_id})
-    return steps or None
+    params = _product_nav_params(product_id, extra_params)
+    steps = expand_dom_steps(contract, open_action, params)
+    if not steps or _steps_have_unresolved_placeholders(steps):
+        return None
+    return steps
 
 
 def _grounded_search_instructions(
@@ -87,7 +125,7 @@ def turn_to_instructions(
             params.get("productId") or params.get("sku") or params.get("variantId") or ""
         ).strip()
         if product_id and not on_pdp:
-            open_steps = _open_product_instructions(contract, product_id)
+            open_steps = _open_product_instructions(contract, product_id, params)
             if open_steps:
                 return open_steps
 
