@@ -1,4 +1,4 @@
-/* nina-bootstrap.js — NINA conversational commerce widget v4.3
+/* nina-bootstrap.js — NINA conversational commerce widget v4.4
    Mobile bottom sheet · desktop dock (Gemini-style) or floating · suggestion chips.
    Session survives same-origin navigations (SPA pushState + sessionStorage).
 */
@@ -663,6 +663,19 @@
       var t = ins.type;
       if (t === 'navigate' && ins.url) {
         navigateTo(ins.url);
+      } else if (t === 'cart_add') {
+        var runCart = function () { cartAddOnPage(ins.size, ins.quantity || 1); };
+        if (W.location.pathname.indexOf('/product/') >= 0) runCart();
+        else setTimeout(runCart, 450);
+      } else if (t === 'click' && ins.selector) {
+        var clickEl = D.querySelector(ins.selector);
+        if (clickEl) clickEl.click();
+      } else if (t === 'fill' && ins.selector) {
+        var fillEl = D.querySelector(ins.selector);
+        if (fillEl) {
+          if ('value' in fillEl) fillEl.value = ins.value != null ? String(ins.value) : '';
+          else if (ins.text != null) fillEl.textContent = ins.text;
+        }
       } else if ((t === 'fetch' || t === 'api_call') && ins.url) {
         var targetUrl;
         try { targetUrl = new URL(ins.url, W.location.href); } catch (_) { return; }
@@ -679,6 +692,8 @@
       } else if (t === 'dom' && ins.selector) {
         var el = D.querySelector(ins.selector);
         if (el && ins.text != null) el.textContent = ins.text;
+      } else if (t === 'toast' && ins.message) {
+        pulseCart();
       } else if (t === 'reload') {
         W.location.reload();
       }
@@ -750,6 +765,66 @@
     return out.slice(0, 10);
   }
 
+  function visibleProductOptions() {
+    var sizes = [];
+    var seen = {};
+    try {
+      D.querySelectorAll('button').forEach(function (btn) {
+        var label = (btn.textContent || '').trim();
+        if (/^(XXS|XS|S|M|L|XL|XXL|2XL|3XL)$/i.test(label)) {
+          var up = label.toUpperCase();
+          if (!seen[up]) {
+            seen[up] = true;
+            sizes.push(up);
+          }
+        }
+      });
+    } catch (_) { /* ignore */ }
+    return { sizes: sizes };
+  }
+
+  function clickButtonMatching(text) {
+    var want = String(text || '').trim().toUpperCase();
+    if (!want) return false;
+    var buttons = D.querySelectorAll('button');
+    for (var i = 0; i < buttons.length; i++) {
+      var label = (buttons[i].textContent || '').trim().toUpperCase();
+      if (label === want) {
+        buttons[i].click();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function setQuantityOnPage(qty) {
+    var n = parseInt(qty, 10);
+    if (isNaN(n) || n < 1) n = 1;
+    var input = D.querySelector('input[type="number"], input[name*="qty" i], input[name*="quantity" i]');
+    if (input) {
+      input.value = String(n);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    }
+    return false;
+  }
+
+  function cartAddOnPage(size, quantity) {
+    if (size) clickButtonMatching(size);
+    if (quantity) setQuantityOnPage(quantity);
+    var added = false;
+    D.querySelectorAll('button').forEach(function (btn) {
+      var label = (btn.textContent || '').trim().toLowerCase();
+      if (!added && label.indexOf('add to cart') >= 0) {
+        btn.click();
+        added = true;
+      }
+    });
+    if (added) pulseCart();
+    return added;
+  }
+
   function clientSearchResults() {
     var fromWidget = (_lastProducts || []).map(function (p, i) {
       return {
@@ -791,6 +866,7 @@
         session_hints: {
           lastSearchResults: clientSearchResults(),
           visibleProducts: visibleProductsFromPage(),
+          productOptions: visibleProductOptions(),
         },
       }),
     })

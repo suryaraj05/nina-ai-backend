@@ -215,10 +215,12 @@ def test_add_it_after_single_product():
         "get_detail",
         {"id": "p99", "name": "Solo Item"},
     )
-    # Simulate session with reference map via prior turn
     run(nina.chat("show solo", "s1"))
     turn = run(nina.chat("add it to cart", "s1"))
     assert turn["ok"]
+    assert turn["data"]["intent"] == "cart_guidance"
+    run(nina.chat("M", "s1"))
+    turn = run(nina.chat("1", "s1"))
     assert turn["data"]["actionCalled"] == "add_to_cart"
     assert turn["data"]["actionInput"]["productId"] == "p02"
 
@@ -236,6 +238,8 @@ def test_remove_after_cart():
     nina = run(_nina_ready())
     run(nina.chat("show hoodies", "s3"))
     run(nina.chat("add it to cart", "s3"))
+    run(nina.chat("M", "s3"))
+    run(nina.chat("1", "s3"))
     turn = run(nina.chat("remove that from cart", "s3"))
     assert turn["ok"]
     assert turn["data"]["actionCalled"] == "remove_from_cart"

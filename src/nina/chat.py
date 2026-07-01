@@ -12,6 +12,7 @@ from .catalog_rail import validate_catalog_mutation
 from .errors import LLMError, StoreError, fail, now_iso, ok
 from .executor import execute_action
 from .auth_queue import pop_replay_if_ready, save_queued_intent
+from .cart_flow import begin_cart_add, continue_cart_add
 from .critic import check_action_alignment
 from .fast_path import try_catalog_search_fast_path, try_fast_path, try_reference_cart_fast_path
 from .guardrails import (
@@ -148,6 +149,45 @@ def _merge_usage(*parts) -> dict:
         usage["promptTokens"] += part.get("promptTokens") or 0
         usage["completionTokens"] += part.get("completionTokens") or 0
     return usage
+
+
+async def _finish_cart_flow_turn(
+    core,
+    state,
+    session_id,
+    user_message,
+    started,
+    flow: dict,
+    *,
+    reasoning_used: bool = False,
+    reasoning_summary=None,
+    usage_parts=None,
+) -> dict:
+    turn = await _build_turn(
+        core,
+        state,
+        session_id,
+        user_message,
+        started,
+        intent=flow.get("intent") or "cart_guidance",
+        confidence=1.0,
+        natural_language_response=flow.get("reply") or "",
+        action_called=flow.get("actionCalled"),
+        action_input=flow.get("actionInput"),
+        action_result=flow.get("actionResult"),
+        reasoning_used=reasoning_used,
+        reasoning_summary=reasoning_summary,
+        usage_parts=usage_parts or [],
+    )
+    chips = flow.get("chips")
+    if chips:
+        turn["suggestionChips"] = list(chips)
+    instructions = flow.get("instructions")
+    if instructions:
+        turn["instructions"] = list(instructions)
+    if core.debug:
+        _debug_print(turn, state, user_message)
+    return ok(turn)
 
 
 def _action_summary(result) -> str:
@@ -411,6 +451,29 @@ async def _execute_action_turn(
             _debug_print(turn, state, user_message)
         return ok(turn)
 
+    if action_name in ("add_to_cart", "add_item_to_cart"):
+        page_id = (core.config or {}).get("_pageId")
+        on_pdp = page_id in ("product_detail", "pdp")
+        flow = begin_cart_add(
+            state,
+            action_input,
+            session_hints=(core.config or {}).get("_sessionHints") or {},
+            contract=(core.config or {}).get("_agentContract") or {},
+            on_pdp=on_pdp,
+        )
+        if flow:
+            return await _finish_cart_flow_turn(
+                core,
+                state,
+                session_id,
+                user_message,
+                started,
+                flow,
+                reasoning_used=reasoning_used,
+                reasoning_summary=reasoning_summary,
+                usage_parts=usage_parts,
+            )
+
     context = {
         "sessionId": session_id,
         "userMessage": user_message,
@@ -640,6 +703,13 @@ async def _handle_pending_continuations(
     """Run any pending continuation before normal resolution: an auto-action
     step, an auth-gated replay, or a resumed plan. Returns a turn envelope if
     one fired, else None to fall through to normal resolution."""
+    cart_flow = continue_cart_add(state, msg)
+    if cart_flow:
+        await core.sessions.save(state)
+        return await _finish_cart_flow_turn(
+            core, state, session_id, msg, started, cart_flow,
+        )
+
     auto_step = pending_auto_action(state)
     if auto_step and auto_step.get("action"):
         gated = await _apply_contract_safety_gate(

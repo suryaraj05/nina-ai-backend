@@ -109,10 +109,11 @@ async def multi_tenant_query(
         from .instructions import turn_to_instructions
         turn = dict(envelope["data"])
         if turn.get("intent") != "blocked":
-            turn["instructions"] = turn_to_instructions(
-                contract, turn, page_context=page_context,
-                session_hints=body.session_hints, confirmed=body.confirmed,
-            )
+            if not turn.get("instructions"):
+                turn["instructions"] = turn_to_instructions(
+                    contract, turn, page_context=page_context,
+                    session_hints=body.session_hints, confirmed=body.confirmed,
+                )
         envelope = {**envelope, "data": turn}
         try:
             from .conversation_log import entry_from_turn

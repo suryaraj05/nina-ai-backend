@@ -74,10 +74,6 @@ async def compose_response(
     action_error=None,
 ) -> tuple[str, dict]:
     """Returns (natural_language_response, usage_dict)."""
-    if not action_error and action_name in ("add_to_cart", "add_item_to_cart"):
-        if isinstance(result, dict) and (result.get("productId") or result.get("sku")):
-            return "Opening that product — use Add to Cart on the product page.", {}
-
     if not action_error and is_grounded_result(result or {}):
         return grounded_reply(action_name or "", result or {}), {}
 
