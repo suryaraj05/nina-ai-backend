@@ -1,4 +1,4 @@
-/* nina-bootstrap.js — NINA conversational commerce widget v4.5
+/* nina-bootstrap.js — NINA conversational commerce widget v4.6
    Mobile bottom sheet · desktop dock (Gemini-style) or floating · suggestion chips.
    Session survives same-origin navigations (SPA pushState + sessionStorage).
 */
@@ -29,6 +29,7 @@
   var SHEET_FULL = 0.92;
   var SHEET_CLOSE = 0.18;
   var CHIP_SHOW = 3;
+  var _pinnedGuidanceChips = null;
 
   var WA = {
     header: '#075e54',
@@ -169,7 +170,7 @@
           W.history.pushState({ ninaNav: 1 }, '', dest);
           W.dispatchEvent(new PopStateEvent('popstate', { state: { ninaNav: 1 } }));
         }
-        renderChips();
+        if (!_pinnedGuidanceChips) renderChips();
         return;
       }
     } catch (_) {}
@@ -622,11 +623,21 @@
         || [];
       var intent = turn.intent || '';
       guidance = intent === 'cart_guidance' || intent === 'clarification';
+      if (guidance && !serverChips.length) {
+        var scraped = visibleProductOptions();
+        if (scraped.sizes && scraped.sizes.length) serverChips = scraped.sizes;
+      }
+      if (guidance && serverChips.length) {
+        _pinnedGuidanceChips = serverChips.slice(0, 8);
+      } else if (!guidance) {
+        _pinnedGuidanceChips = null;
+      }
+    } else if (_pinnedGuidanceChips && _pinnedGuidanceChips.length) {
+      serverChips = _pinnedGuidanceChips;
+      guidance = true;
     }
     var picks;
     if (guidance && serverChips.length) {
-      // Size / quantity / clarification: show ALL server chips verbatim, no
-      // generic pool mixing and no truncation — these are the actual choices.
       picks = serverChips.slice(0, 8);
     } else if (serverChips.length) {
       var extra = shufflePick(buildChipPool(honestExtra), Math.max(0, CHIP_SHOW - serverChips.length));
@@ -1167,7 +1178,9 @@
       }
     });
 
-    W.addEventListener('popstate', function () { renderChips(); });
+    W.addEventListener('popstate', function () {
+      if (!_pinnedGuidanceChips) renderChips();
+    });
 
     fab.addEventListener('click', function () { isOpen ? close() : open(); });
     D.getElementById('nina-close').addEventListener('click', close);
