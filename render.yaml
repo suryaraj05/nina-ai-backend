@@ -17,3 +17,5 @@ services:
         generateValue: true
       - key: NINA_DEFAULT_LLM_CONFIG
         sync: false   # Set manually in Render dashboard — contains your LLM API key
+      - key: NINA_REDIS_URL
+        sync: false   # Upstash Redis URL (rediss://…) — shared sessions across workers

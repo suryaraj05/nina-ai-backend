@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 import uuid
 
@@ -47,6 +48,9 @@ from .session import (
     seed_reference_map_from_client,
     update_reference_map,
 )
+
+
+_log = logging.getLogger(__name__)
 
 
 def _shape(value):
@@ -969,6 +973,7 @@ async def run_turn(
     try:
         state = await core.sessions.load_or_create(session_id)
     except StoreError as exc:
+        _log.warning("Session store %s failed: %s", exc.op, exc.reason)
         return fail(
             "NINA_SESSION_STORE_FAILURE",
             f"Session store operation '{exc.op}' failed.",

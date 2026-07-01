@@ -27,6 +27,9 @@ class _FakeRedis:
     async def delete(self, key: str) -> None:
         self._store.pop(key, None)
 
+    async def ping(self) -> bool:
+        return True
+
 
 def run(coro):
     return asyncio.run(coro)
@@ -89,3 +92,56 @@ def test_prefix_applied_to_keys(store):
 def test_ttl_from_state_fallback():
     assert _ttl_from_state({}) == 1800
     assert _ttl_from_state({"expiresAt": "bad-date"}) == 1800
+
+
+def test_normalize_redis_url_strips_wrapping_quotes():
+    from nina.redis_store import normalize_redis_url
+
+    raw = '"rediss://default:secret@us1-foo.upstash.io:6379"'
+    assert normalize_redis_url(raw) == "rediss://default:secret@us1-foo.upstash.io:6379"
+
+
+def test_normalize_redis_url_strips_redis_url_prefix():
+    from nina.redis_store import normalize_redis_url
+
+    raw = 'REDIS_URL="rediss://default:secret@us1-foo.upstash.io:6379"'
+    assert normalize_redis_url(raw) == "rediss://default:secret@us1-foo.upstash.io:6379"
+
+
+def test_normalize_upstash_url_upgrades_to_tls():
+    from nina.redis_store import normalize_redis_url
+
+    raw = "redis://default:secret@us1-foo.upstash.io:6379"
+    assert normalize_redis_url(raw) == "rediss://default:secret@us1-foo.upstash.io:6379"
+
+
+def test_normalize_redis_url_unchanged_for_local():
+    from nina.redis_store import normalize_redis_url
+
+    assert normalize_redis_url("redis://localhost:6379") == "redis://localhost:6379"
+
+
+def test_ping(store):
+    assert run(store.ping()) is True
+
+
+def test_redis_health_not_configured(monkeypatch):
+    from nina import redis_store
+
+    monkeypatch.delenv("NINA_REDIS_URL", raising=False)
+    monkeypatch.delenv("UPSTASH_REDIS_URL", raising=False)
+    monkeypatch.delenv("REDIS_URL", raising=False)
+    redis_store._SHARED = None
+    result = run(redis_store.redis_health())
+    assert result == {"configured": False, "ok": None}
+
+
+def test_redis_health_ok_with_fake_client(monkeypatch):
+    from nina import redis_store
+
+    monkeypatch.setenv("NINA_REDIS_URL", "redis://localhost:6379")
+    redis_store._SHARED = RedisStore(client=_FakeRedis())
+    result = run(redis_store.redis_health())
+    assert result["configured"] is True
+    assert result["ok"] is True
+    redis_store._SHARED = None

@@ -18,6 +18,7 @@ async def _safe_aclose(nina: Nina) -> None:
         pass
 
 from . import Nina
+from .redis_store import shared_redis_store
 
 # Max cached Nina instances. LRU sites are evicted when this is exceeded.
 # Raise with NINA_POOL_MAX_SITES if you have many high-traffic merchants.
@@ -85,6 +86,9 @@ class NinaPool:
         self._last_used.clear()
         for nina in instances:
             await _safe_aclose(nina)
+        from .redis_store import close_shared_redis
+
+        await close_shared_redis()
 
     def _circuit_open(self, site_id: str) -> bool:
         """Return True if the circuit breaker is tripped for this site."""
@@ -121,10 +125,9 @@ class NinaPool:
             if site_id in self._instances:
                 return self._instances[site_id]
             session_store: Any = "memory"
-            redis_url = os.environ.get("NINA_REDIS_URL")
-            if redis_url:
-                from .redis_store import RedisStore
-                session_store = RedisStore(url=redis_url)
+            redis_store = shared_redis_store()
+            if redis_store is not None:
+                session_store = redis_store
             nina = Nina()
             result = await nina.init({"llm": llm_config, "session": {"store": session_store}})
             if not result.get("ok"):

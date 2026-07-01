@@ -13,7 +13,7 @@ COPY schemas/ ./schemas/
 COPY src/ ./src/
 
 RUN pip install --no-cache-dir -e . \
-    && pip install --no-cache-dir fastapi>=0.110 uvicorn[standard] redis cryptography sentry-sdk psycopg2-binary
+    && pip install --no-cache-dir fastapi>=0.110 uvicorn[standard] redis certifi cryptography sentry-sdk psycopg2-binary
 
 # Expose console port
 EXPOSE 8787

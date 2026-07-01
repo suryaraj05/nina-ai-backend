@@ -118,9 +118,15 @@ def create_app() -> FastAPI:
         await POOL.aclose_all()
 
     @app.get("/health")
-    def health() -> dict[str, Any]:
+    async def health() -> dict[str, Any]:
+        from .redis_store import redis_health
+
+        redis = await redis_health()
+        ok = True
+        if redis.get("configured") and redis.get("ok") is False:
+            ok = False
         return {
-            "ok": True,
+            "ok": ok,
             "service": "nina-console",
             "store": {
                 "orgs":  STORE.count_orgs(),
@@ -128,6 +134,7 @@ def create_app() -> FastAPI:
                 "keys":  STORE.count_keys(),
                 "backend": "postgresql" if _db_url else "json-file",
             },
+            "redis": redis,
             "pool": {
                 "cached":  len(POOL._instances),
                 "max":     int(os.environ.get("NINA_POOL_MAX_SITES", "100")),
