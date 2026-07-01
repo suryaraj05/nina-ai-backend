@@ -103,6 +103,7 @@ async def multi_tenant_query(
         session_hints=body.session_hints,
         page_id=page_context.get("pageId"),
         replay_queued=body.replayQueued,
+        confirmed=body.confirmed,
         product_catalog=catalog,
     )
     if envelope.get("ok") and envelope.get("data"):

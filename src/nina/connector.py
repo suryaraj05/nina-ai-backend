@@ -106,6 +106,7 @@ class NinaConnector:
                 body.transcript or body.message,
                 body.sessionId,
                 replay_queued=body.replayQueued,
+                confirmed=body.confirmed,
             )
             if envelope.get("ok") and envelope.get("data"):
                 turn = dict(envelope["data"])

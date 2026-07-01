@@ -173,6 +173,7 @@ class Nina:
         *,
         replay_queued: bool = False,
         resume_plan: bool = False,
+        confirmed: bool = False,
     ) -> dict:
         try:
             text = user_message
@@ -180,12 +181,15 @@ class Nina:
                 text = "(replay queued action)"
             if resume_plan and not (text or "").strip():
                 text = "(resuming plan)"
+            if confirmed and not (text or "").strip():
+                text = "yes"
             return await run_turn(
                 self._core,
                 text,
                 session_id,
                 replay_queued=replay_queued,
                 resume_plan=resume_plan,
+                confirmed=confirmed,
             )
         except Exception as exc:
             # Surface internal failures to error tracking before converting them

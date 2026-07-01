@@ -179,6 +179,7 @@ class NinaPool:
         page_id: str | None = None,
         replay_queued: bool = False,
         resume_plan: bool = False,
+        confirmed: bool = False,
         product_catalog: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Get-or-create the Nina() for site_id and run one chat turn.
@@ -229,6 +230,7 @@ class NinaPool:
                 session_id,
                 replay_queued=replay_queued,
                 resume_plan=resume_plan,
+                confirmed=confirmed,
             )
 
         # Update circuit breaker state based on result

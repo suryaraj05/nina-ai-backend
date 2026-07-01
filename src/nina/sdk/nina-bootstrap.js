@@ -1,4 +1,4 @@
-/* nina-bootstrap.js — NINA conversational commerce widget v4.7
+/* nina-bootstrap.js — NINA conversational commerce widget v4.8
    Mobile bottom sheet · desktop dock (Gemini-style) or floating · suggestion chips.
    Session survives same-origin navigations (SPA pushState + sessionStorage).
 */
@@ -670,8 +670,12 @@
 
   function sendUserMessage(display, apiText) {
     if (_busy) return;
+    var api = apiText || display;
+    if (_SIZE_CHIP_RE.test(String(api || '').trim())) {
+      selectSizeOnPage(api);
+    }
     addRow('user', display);
-    chat(apiText || display);
+    chat(api);
   }
 
   function execInstructions(instructions) {
@@ -809,15 +813,69 @@
     return { sizes: sizes };
   }
 
+  var _SIZE_CHIP_RE = /^(?:size\s+)?(XXS|XS|S|M|L|XL|XXL|2XL|3XL)$/i;
+
+  function normalizeSizeLabel(text) {
+    var m = String(text || '').trim().toUpperCase().match(/^(XXS|XS|S|M|L|XL|XXL|2XL|3XL)$/);
+    return m ? m[1] : '';
+  }
+
+  function elementSizeLabel(el) {
+    if (!el || !el.getAttribute) return '';
+    var aria = el.getAttribute('aria-label') || el.getAttribute('title') || '';
+    var fromAria = normalizeSizeLabel(aria);
+    if (fromAria) return fromAria;
+    var data = el.getAttribute('data-size') || el.getAttribute('data-value') || el.getAttribute('value') || '';
+    var fromData = normalizeSizeLabel(data);
+    if (fromData) return fromData;
+    return normalizeSizeLabel((el.textContent || '').trim());
+  }
+
+  function clickElement(el) {
+    if (!el) return false;
+    try {
+      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+      el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+      el.click();
+      return true;
+    } catch (_) {
+      try { el.click(); return true; } catch (_2) { return false; }
+    }
+  }
+
   function clickButtonMatching(text) {
-    var want = String(text || '').trim().toUpperCase();
+    var want = normalizeSizeLabel(text);
     if (!want) return false;
     var buttons = D.querySelectorAll('button');
     for (var i = 0; i < buttons.length; i++) {
-      var label = (buttons[i].textContent || '').trim().toUpperCase();
-      if (label === want) {
-        buttons[i].click();
-        return true;
+      if (elementSizeLabel(buttons[i]) === want) {
+        return clickElement(buttons[i]);
+      }
+    }
+    return false;
+  }
+
+  function selectSizeOnPage(size) {
+    var want = normalizeSizeLabel(size);
+    if (!want) return false;
+    if (clickButtonMatching(want)) return true;
+
+    var nodes = D.querySelectorAll(
+      'button, [role="button"], [role="radio"], label, a, ' +
+      '[class*="size" i], [class*="variant" i], [data-size], [data-value]'
+    );
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      if (elementSizeLabel(el) === want) {
+        return clickElement(el);
+      }
+    }
+
+    for (var j = 0; j < nodes.length; j++) {
+      var node = nodes[j];
+      var raw = (node.textContent || '').replace(/\s+/g, ' ').trim().toUpperCase();
+      if (raw === want || raw === ('SIZE ' + want)) {
+        return clickElement(node);
       }
     }
     return false;
@@ -837,18 +895,28 @@
   }
 
   function cartAddOnPage(size, quantity) {
-    if (size) clickButtonMatching(size);
-    if (quantity) setQuantityOnPage(quantity);
-    var added = false;
-    D.querySelectorAll('button').forEach(function (btn) {
-      var label = (btn.textContent || '').trim().toLowerCase();
-      if (!added && label.indexOf('add to cart') >= 0) {
-        btn.click();
-        added = true;
-      }
-    });
-    if (added) pulseCart();
-    return added;
+    var picked = false;
+    if (size) picked = selectSizeOnPage(size);
+
+    function doAdd() {
+      if (quantity) setQuantityOnPage(quantity);
+      var added = false;
+      D.querySelectorAll('button').forEach(function (btn) {
+        var label = (btn.textContent || '').trim().toLowerCase();
+        if (!added && label.indexOf('add to cart') >= 0) {
+          clickElement(btn);
+          added = true;
+        }
+      });
+      if (added) pulseCart();
+      return added;
+    }
+
+    if (size) {
+      setTimeout(doAdd, picked ? 180 : 320);
+      return true;
+    }
+    return doAdd();
   }
 
   function clientSearchResults() {
@@ -914,7 +982,7 @@
       handleTurn(turn, userQuery);
       var intent = turn.intent;
       if (intent === 'confirmation') {
-        addConfirm(function () { chat('', { confirmed: true }); }, null);
+        addConfirm(function () { chat('yes', { confirmed: true }); }, null);
       } else if (intent === 'needs_login') {
         var loginUrl = null;
         (turn.instructions || []).forEach(function (i) { if (i.url && !loginUrl) loginUrl = i.url; });

@@ -720,13 +720,97 @@ async def _apply_contract_safety_gate(
     return None
 
 
+_YES_WORDS = frozenset({"yes", "y", "yeah", "yep", "confirm", "ok", "okay"})
+_NO_WORDS = frozenset({"no", "n", "nope", "cancel"})
+
+
+async def _handle_pending_confirmation(
+    core,
+    state,
+    session_id,
+    msg,
+    started,
+    *,
+    confirmed: bool,
+    threshold_for_gate: float,
+    security: dict,
+) -> dict | None:
+    """Affirm or cancel a stored confirmation without re-resolving via LLM."""
+    pending = state.get("pending")
+    if not isinstance(pending, dict) or pending.get("type") != "confirmation":
+        return None
+
+    text = (msg or "").strip().lower()
+    if text in _NO_WORDS:
+        state["pending"] = None
+        turn = await _build_turn(
+            core,
+            state,
+            session_id,
+            msg,
+            started,
+            intent="confirmation",
+            confidence=1.0,
+            natural_language_response="Understood — I won't do that.",
+        )
+        await core.sessions.save(state)
+        return ok(turn)
+
+    if not confirmed and text not in _YES_WORDS:
+        return None
+
+    action_name = pending["action"]
+    action_input = pending.get("collectedInput") or {}
+    state["pending"] = None
+    await core.sessions.save(state)
+    gated = await _apply_contract_safety_gate(
+        core,
+        state,
+        session_id,
+        msg or "yes",
+        started,
+        action_name,
+        action_input,
+        1.0,
+        confirmed=True,
+        threshold=threshold_for_gate,
+        security=security,
+    )
+    if gated:
+        return gated
+    return await _execute_action_turn(
+        core,
+        state,
+        session_id,
+        msg or "yes",
+        started,
+        action_name,
+        action_input,
+        1.0,
+        actions=core.registry.all(),
+    )
+
+
 async def _handle_pending_continuations(
     core, state, session_id, msg, started, *,
-    threshold_for_gate, security, replay_queued, resume_plan,
+    threshold_for_gate, security, replay_queued, resume_plan, confirmed=False,
 ) -> dict | None:
     """Run any pending continuation before normal resolution: an auto-action
     step, an auth-gated replay, or a resumed plan. Returns a turn envelope if
     one fired, else None to fall through to normal resolution."""
+    confirmed_turn = await _handle_pending_confirmation(
+        core,
+        state,
+        session_id,
+        msg,
+        started,
+        confirmed=confirmed,
+        threshold_for_gate=threshold_for_gate,
+        security=security,
+    )
+    if confirmed_turn is not None:
+        return confirmed_turn
+
     cart_flow = continue_cart_add(state, msg)
     if cart_flow:
         await core.sessions.save(state)
@@ -942,6 +1026,7 @@ async def run_turn(
     *,
     replay_queued: bool = False,
     resume_plan: bool = False,
+    confirmed: bool = False,
 ) -> dict:
     """Execute one chat turn → the universal envelope.
 
@@ -964,6 +1049,8 @@ async def run_turn(
         user_message = "(replay queued action)"
     if resume_plan and not (user_message or "").strip():
         user_message = "(resuming plan)"
+    if confirmed and not (user_message or "").strip():
+        user_message = "yes"
 
     err, msg = _validate_inputs(user_message, session_id)
     if err:
@@ -1012,7 +1099,7 @@ async def run_turn(
     cont = await _handle_pending_continuations(
         core, state, session_id, msg, started,
         threshold_for_gate=threshold_for_gate, security=security,
-        replay_queued=replay_queued, resume_plan=resume_plan,
+        replay_queued=replay_queued, resume_plan=resume_plan, confirmed=confirmed,
     )
     if cont is not None:
         return cont
@@ -1123,7 +1210,7 @@ async def run_turn(
         pending
         and pending["type"] == "confirmation"
         and resolution in ("action", "chitchat")
-        and msg.lower().strip() in {"yes", "y", "yeah", "yep", "confirm", "ok", "okay"}
+        and msg.lower().strip() in _YES_WORDS
     ):
         resolution = "action"
         action_name = pending["action"]
@@ -1131,12 +1218,7 @@ async def run_turn(
         confidence = 1.0
         confirmed_via_pending = True
         state["pending"] = None
-    elif pending and pending["type"] == "confirmation" and msg.lower().strip() in {
-        "no",
-        "n",
-        "nope",
-        "cancel",
-    }:
+    elif pending and pending["type"] == "confirmation" and msg.lower().strip() in _NO_WORDS:
         state["pending"] = None
         turn = await _build_turn(
             core,

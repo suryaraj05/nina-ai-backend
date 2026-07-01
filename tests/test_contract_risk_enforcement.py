@@ -74,6 +74,17 @@ def test_confirm_action_executes_after_user_says_yes_no_infinite_loop():
     assert data["intent"] != "confirmation"
 
 
+def test_confirm_action_executes_when_widget_sends_confirmed_with_empty_message():
+    """Widget Confirm button sends confirmed=true; must not hit NINA_MESSAGE_INVALID."""
+    nina = run(_make_nina(_adapter_resolving_to("checkout")))
+    run(nina.chat("checkout please", "s1"))
+    envelope = run(nina.chat("", "s1", confirmed=True))
+    assert envelope.get("ok") is True, envelope
+    data = envelope["data"]
+    assert data["actionCalled"] == "checkout"
+    assert data["actionResult"] == {"orderId": "order-1"}
+
+
 def test_block_action_is_refused_outright():
     nina = run(_make_nina(_adapter_resolving_to("export_all_data")))
     envelope = run(nina.chat("export all my data", "s1"))
