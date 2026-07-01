@@ -1,8 +1,24 @@
 ---
 name: checkout-skill
-appliesTo: [checkout]
-description: How to handle the checkout/order-placement flow safely.
+appliesTo: [checkout, place_order]
+description: >
+  High-risk checkout and order placement. Always confirm before executing;
+  never auto-charge on the first mention.
+composeGuidance: |
+  State order reference exactly as returned. Never fabricate confirmation numbers.
+clarifyGuidance: |
+  If cart is empty or user is not logged in, say what is blocking checkout and
+  offer the next step (view cart, sign in).
 ---
-- checkout is high-risk and requires explicit confirmation. Never call it on the first mention of "checkout" or "buy it now" — resolve to "confirm" first and let the user explicitly say yes.
-- If the session is not authenticated, do not attempt to bypass login; let NINA's existing auth-replay flow handle it.
-- After checkout succeeds, state the order reference/confirmation number exactly as returned by the action. Never fabricate one if the result does not include it.
+## When to act
+- User explicitly wants to pay, place order, or finish purchase **after**
+  confirming → resolve to `confirm` first on the initial ask.
+- Only call checkout after an unambiguous yes ("yes", "confirm", "place order").
+
+## Parameters
+- Use cart/session context from REFERENCE MAP; do not invent line items.
+
+## Never
+- Call checkout on "checkout" or "buy now" without confirmation.
+- Bypass login — let auth-replay handle gated checkout.
+- Promise success before the action returns.

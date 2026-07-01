@@ -72,10 +72,11 @@ async def compose_response(
     action_name,
     result,
     action_error=None,
+    skills=None,
 ) -> tuple[str, dict]:
     """Returns (natural_language_response, usage_dict)."""
     if not action_error and is_grounded_result(result or {}):
-        return grounded_reply(action_name or "", result or {}), {}
+        return grounded_reply(action_name or "", result or {}, skills=skills), {}
 
     if not action_error and _is_navigation_only_result(result or {}):
         return _navigation_reply(action_name or "", result or {}), {}
@@ -94,6 +95,11 @@ async def compose_response(
         "language": behavior.get("language", "auto"),
     }
     prompt = render(COMPOSE_TEMPLATE, payload)
+    from .skill_runtime import compose_guidance_for_action
+
+    guidance = compose_guidance_for_action(skills or [], action_name or "")
+    if guidance:
+        prompt = f"{prompt}\n\nACTION COMPOSE GUIDANCE\n{guidance}"
     try:
         text, usage = await llm.compose(prompt)
         return text.strip(), usage

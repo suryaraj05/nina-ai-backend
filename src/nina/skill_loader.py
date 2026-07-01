@@ -39,13 +39,22 @@ def _parse_skill_file(path: Path) -> dict[str, Any] | None:
     fast_path = meta.get("fastPath") or []
     if isinstance(fast_path, str):
         fast_path = [fast_path]
-    return {
+    parsed: dict[str, Any] = {
         "name": meta.get("name", path.stem),
         "description": meta.get("description", ""),
         "appliesTo": [a for a in applies_to if isinstance(a, str)],
         "fastPath": [p for p in fast_path if isinstance(p, str)],
         "body": match.group(2).strip(),
     }
+    for key in ("clarificationFlow", "searchUX"):
+        val = meta.get(key)
+        if isinstance(val, dict):
+            parsed[key] = val
+    for key in ("composeGuidance", "clarifyGuidance"):
+        val = meta.get(key)
+        if isinstance(val, str) and val.strip():
+            parsed[key] = val.strip()
+    return parsed
 
 
 def load_skills(*dirs: Path | str | None) -> list[dict[str, Any]]:
@@ -72,6 +81,26 @@ def skills_by_action(skills: list[dict[str, Any]]) -> dict[str, str]:
     """Map action_id -> concatenated skill body text (an action may have >1 skill)."""
     grouped: dict[str, list[str]] = {}
     for skill in skills:
+        body = skill.get("body") or ""
+        if not body.strip():
+            continue
         for action_id in skill["appliesTo"]:
-            grouped.setdefault(action_id, []).append(skill["body"])
+            grouped.setdefault(action_id, []).append(body)
     return {action_id: "\n\n".join(bodies) for action_id, bodies in grouped.items()}
+
+
+def apply_skills_to_core(core: Any, skills_dir: Path | str | None = None) -> list[dict[str, Any]]:
+    """Load built-in skill templates onto a Nina _Core (SDK / tests).
+
+    Multi-tenant console uses :func:`skill_synth.apply_skills_for_contract`
+    instead — skills are synthesized from the agent contract automatically.
+    """
+    from .fast_path import compile_fast_path_patterns
+
+    cache_key = f"builtin:{skills_dir or ''}"
+    skills = load_skills(BUILTIN_SKILLS_DIR, skills_dir)
+    core.skills = skills
+    core.skills_by_action = skills_by_action(skills)
+    core.fast_path_patterns = compile_fast_path_patterns(skills)
+    core._skills_cache_key = cache_key
+    return skills

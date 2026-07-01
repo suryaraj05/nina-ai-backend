@@ -16,8 +16,7 @@ from .init import (
 from .registry import Registry, validate_action
 from .connector import NinaConnector
 from .session import MemoryStore, SessionAPI, SessionManager
-from .fast_path import compile_fast_path_patterns
-from .skill_loader import BUILTIN_SKILLS_DIR, load_skills, skills_by_action as _skills_by_action
+from .skill_loader import apply_skills_to_core
 
 
 def _capture_exception(exc: BaseException) -> None:
@@ -43,8 +42,10 @@ class _Core:
         self.behavior: dict = {}
         self.hooks: dict = {}
         self.session_store_kind = "memory"
+        self.skills: list[dict] = []
         self.skills_by_action: dict[str, str] = {}
         self.fast_path_patterns: list[dict] = []
+        self._skills_cache_key: str | None = None
 
 
 class Nina:
@@ -96,9 +97,7 @@ class Nina:
         self._core.identity = merged_section(config, "identity")
         self._core.behavior = merged_section(config, "behavior")
         self._core.hooks = config.get("hooks") or {}
-        skills = load_skills(BUILTIN_SKILLS_DIR, config.get("skillsDir"))
-        self._core.skills_by_action = _skills_by_action(skills)
-        self._core.fast_path_patterns = compile_fast_path_patterns(skills)
+        apply_skills_to_core(self._core, config.get("skillsDir"))
         self._core.llm = build_llm_client(llm_cfg)
         self._core.sessions = SessionManager(
             store,

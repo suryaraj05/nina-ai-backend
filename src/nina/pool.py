@@ -215,6 +215,12 @@ class NinaPool:
             # instance — every contract change calls POOL.evict(), which discards
             # the instance and forces a fresh registration on next use.
             await self._ensure_contract_registered(nina, contract)
+            from .skill_synth import apply_skills_for_contract, contract_skills_fingerprint
+
+            catalog = list(product_catalog or [])
+            fp = contract_skills_fingerprint(contract, catalog_size=len(catalog))
+            if getattr(nina._core, "_skills_cache_key", "__unset__") != fp:
+                apply_skills_for_contract(nina._core, contract, catalog=catalog)
             result = await nina.chat(
                 message,
                 session_id,

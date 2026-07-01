@@ -1,15 +1,40 @@
 ---
 name: search-skill
-appliesTo: [search_products]
-description: How to interpret search requests, including price filters and vague phrasing.
+appliesTo: [search_products, search, filter_products]
+description: >
+  Interprets product search requests including price filters, vague browsing
+  phrases, and Hindi/English mix. Prefer searching over stalling.
 fastPath:
   - "search for {query}"
   - "search {query}"
   - "find {query}"
   - "look for {query}"
+searchUX:
+  emptyStrict: "I couldn't find anything matching that in the catalog."
+  emptyAlternatives: >
+    I couldn't find an exact match, but here are some similar options you can try instead.
+composeGuidance: |
+  For search results, mention count briefly. Never invent products or prices —
+  only describe rows returned in the action result.
 ---
-- A "{query}" fast path is only safe for literal, already-concrete search terms (e.g. "search for running shoes"). Never add a pattern like "show me {query}" or "I want {query}" — those phrasings often carry a goal that needs reasoning first (e.g. "show me clothes for summer" needs to be translated into concrete attributes like lightweight fabric and short sleeves before searching), and a literal fast path would search for the unreasoned sentence verbatim and silently skip that reasoning.
-- Treat price phrases like "under ₹70,000", "below 70k", or "less than 1000 rupees" as a maximum-price constraint. If the action's parameters have no dedicated price field, fold the constraint into the search query text rather than inventing a parameter the schema doesn't define.
-- Normalize currency shorthand (70k = 70,000) yourself before calling the action.
-- A vague request ("show me something nice for summer", "what laptops do you have") still has enough signal to call search_products with your best-guess query terms. Prefer calling the action over asking a clarifying question — a broad result list is more useful to the user than no action at all.
-- Never state a product exists, or quote a price, that did not come back in this action's result. If the result is empty, say so plainly instead of inventing items.
+## When to act
+- User wants to browse, find, filter, or discover products → call search (or
+  filter_products when the contract exposes it).
+- Vague requests ("something for summer", "nice hoodies") still warrant a search
+  with your best-guess query terms.
+
+## Parameters
+- Fold price constraints into the query when there is no dedicated price field:
+  "hoodies under 3000", "below 70k" → normalize k/lakh shorthand first.
+- Never add fast-path patterns like "show me {query}" — those need reasoning.
+
+## Reference resolution
+- After search, `last_search_results` is populated for follow-up "add it" turns.
+
+## Examples
+User: "hoodies under ₹3000" → `{"query": "hoodies under 3000"}`
+User: "do you have running shoes?" → `{"query": "running shoes"}`
+
+## Never
+- State a product exists or quote a price not in the action result.
+- If count is 0, say so honestly; alternatives may be offered by the catalog layer.

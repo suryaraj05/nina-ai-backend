@@ -14,7 +14,10 @@
         "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,62}$" },
         "name": { "type": "string", "minLength": 1 },
         "baseUrl": { "type": "string", "format": "uri" },
-        "locales": { "type": "array", "items": { "type": "string" } }
+        "locales": { "type": "array", "items": { "type": "string" } },
+        "markets": { "type": "array", "items": { "type": "string" } },
+        "defaultMarket": { "type": "string" },
+        "country": { "type": "string" }
       }
     },
     "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
@@ -50,7 +53,8 @@
     "apis": {
       "type": "object",
       "additionalProperties": { "$ref": "#/$defs/apiGroup" }
-    }
+    },
+    "signals": { "$ref": "#/$defs/signals" }
   },
   "$defs": {
     "route": {
@@ -197,6 +201,23 @@
         "panel": { "type": "string", "enum": ["left", "right"] },
         "apiBase": { "type": "string" },
         "manifestUrl": { "type": "string", "format": "uri" }
+      }
+    },
+    "signals": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "productDetail": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "hasSizeOptions": { "type": "boolean" },
+            "sizeLabels": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
       }
     }
   }

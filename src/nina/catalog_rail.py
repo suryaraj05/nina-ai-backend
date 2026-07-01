@@ -419,7 +419,15 @@ def is_grounded_result(result: Any) -> bool:
     return isinstance(result, dict) and bool(result.get("grounded"))
 
 
-def grounded_reply(action_name: str, result: dict[str, Any]) -> str:
+def grounded_reply(
+    action_name: str,
+    result: dict[str, Any],
+    *,
+    skills: list[dict[str, Any]] | None = None,
+) -> str:
+    from .skill_runtime import search_ux_messages
+
+    search_ux = search_ux_messages(skills or [])
     if result.get("noCatalog"):
         return (
             "I don't have verified product data for this store yet. "
@@ -429,11 +437,8 @@ def grounded_reply(action_name: str, result: dict[str, Any]) -> str:
     if action_name in _SEARCH_ACTIONS:
         if count == 0:
             if result.get("alternatives") and result.get("suggestions"):
-                return (
-                    "I couldn't find an exact match, but here are some "
-                    "similar options you can try instead."
-                )
-            return "I couldn't find anything matching that in the catalog."
+                return search_ux["emptyAlternatives"]
+            return search_ux["emptyStrict"]
         return f"I found {count} item{'s' if count != 1 else ''} in the catalog."
     return _deterministic_short(result)
 

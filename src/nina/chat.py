@@ -460,6 +460,7 @@ async def _execute_action_turn(
             session_hints=(core.config or {}).get("_sessionHints") or {},
             contract=(core.config or {}).get("_agentContract") or {},
             on_pdp=on_pdp,
+            skills=getattr(core, "skills", None) or [],
         )
         if flow:
             return await _finish_cart_flow_turn(
@@ -519,6 +520,7 @@ async def _execute_action_turn(
         action_name,
         result,
         action_error,
+        skills=getattr(core, "skills", None) or [],
     )
     usage_parts.append(compose_usage)
 
@@ -850,6 +852,7 @@ async def _handle_clarification(
                 missing,
                 confidence,
                 question,
+                skills=getattr(core, "skills", None) or [],
             )
         attempts = ((pending or {}).get("attemptsUsed") or 0) + 1
         max_clar = core.behavior.get("maxClarifications", 2)

@@ -198,8 +198,11 @@ Respond with ONLY a single JSON object: {{"question": string, "strategy": string
 
 async def generate_clarification(llm, identity, behavior, state, message,
                                  action_name, collected, missing, confidence,
-                                 fallback):
+                                 fallback, skills=None):
     """Capability 2 — context-grounded clarification. Returns (question, strategy)."""
+    from .skill_runtime import clarify_guidance_for_action
+
+    skill_block = clarify_guidance_for_action(skills or [], action_name or "")
     prompt = _CLARIFY_PROMPT.format(
         header=CLARIFIER_HEADER, agent_name=identity["agentName"],
         untrusted_message=format_untrusted_user_message(message),
@@ -208,6 +211,8 @@ async def generate_clarification(llm, identity, behavior, state, message,
         missing=", ".join(missing) or "unclear",
         reference_section=_reference_section(state),
         language=behavior["language"])
+    if skill_block:
+        prompt = f"{prompt}\n\nACTION SKILL GUIDANCE\n{skill_block}"
     try:
         text, _usage = await llm.compose(prompt)
         out = parse_json_text(text) or {}

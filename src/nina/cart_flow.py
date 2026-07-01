@@ -6,6 +6,11 @@ import re
 from typing import Any
 
 from .instructions import _open_product_instructions
+from .skill_runtime import (
+    clarification_flow_for_action,
+    format_skill_template,
+    hint_path_get,
+)
 
 _CART_ACTIONS = frozenset({"add_to_cart", "add_item_to_cart"})
 _DEFAULT_SIZES = ["XS", "S", "M", "L", "XL", "XXL"]
@@ -73,18 +78,36 @@ def _navigate_instructions(
     return list(steps or [])
 
 
-def _size_turn(pending: dict[str, Any], *, on_pdp: bool, retry: bool = False) -> dict[str, Any]:
+def _step_def(flow: dict[str, Any], field: str) -> dict[str, Any]:
+    for step in flow.get("steps") or []:
+        if isinstance(step, dict) and step.get("field") == field:
+            return step
+    return {}
+
+
+def _size_turn(
+    pending: dict[str, Any],
+    *,
+    on_pdp: bool,
+    retry: bool = False,
+) -> dict[str, Any]:
+    flow = pending.get("flowSpec") or {}
+    step = _step_def(flow, "size")
     collected = pending.get("collectedInput") or {}
     name = collected.get("productName") or "this item"
-    chips = list(pending.get("sizes") or _DEFAULT_SIZES)
+    values = {"productName": name, "size": collected.get("size") or ""}
     if on_pdp:
-        reply = "Pick a size:" if not retry else "Tap your size:"
+        template = (
+            step.get("promptRetry") if retry else step.get("promptOnPdp")
+        ) or step.get("prompt") or ("Tap your size:" if retry else "Pick a size:")
     else:
-        reply = (
-            f"Opening {name}. Pick a size:"
-            if not retry
-            else f"Tap a size for {name}:"
+        template = (
+            step.get("promptRetry") if retry else step.get("promptNavigate")
+        ) or step.get("promptNavigate") or (
+            f"Tap a size for {name}:" if retry else f"Opening {name}. Pick a size:"
         )
+    reply = format_skill_template(str(template), values)
+    chips = list(pending.get("sizes") or step.get("chipsDefault") or _DEFAULT_SIZES)
     return {
         "intent": "cart_guidance",
         "reply": reply,
@@ -94,24 +117,37 @@ def _size_turn(pending: dict[str, Any], *, on_pdp: bool, retry: bool = False) ->
 
 
 def _quantity_turn(pending: dict[str, Any]) -> dict[str, Any]:
-    size = (pending.get("collectedInput") or {}).get("size") or ""
-    reply = f"Size {size} — how many?"
+    flow = pending.get("flowSpec") or {}
+    step = _step_def(flow, "quantity")
+    collected = pending.get("collectedInput") or {}
+    size = collected.get("size") or ""
+    values = {"productName": collected.get("productName") or "item", "size": size}
+    template = step.get("prompt") or "Size {size} — how many?"
+    reply = format_skill_template(str(template), values)
+    raw_chips = step.get("chips") or _QTY_CHIPS
+    chips = [str(c) for c in raw_chips]
     return {
         "intent": "cart_guidance",
         "reply": reply,
-        "chips": list(_QTY_CHIPS),
+        "chips": chips,
         "instructions": [],
     }
 
 
-def _complete_turn(collected: dict[str, Any]) -> dict[str, Any]:
+def _complete_turn(collected: dict[str, Any], flow: dict[str, Any]) -> dict[str, Any]:
+    complete = flow.get("complete") or {}
     size = str(collected.get("size") or "M")
     quantity = int(collected.get("quantity") or 1)
     name = collected.get("productName") or "item"
+    values = {"productName": name, "size": size, "quantity": quantity}
+    template = complete.get("reply") or "Added {productName} ({size} × {quantity}) to your cart."
+    reply = format_skill_template(str(template), values)
+    raw_chips = complete.get("chips") or ["What's in my cart?", "Continue shopping"]
+    chips = [str(c) for c in raw_chips]
     return {
         "intent": "action",
-        "reply": f"Added {name} ({size} × {quantity}) to your cart.",
-        "chips": ["What's in my cart?", "Continue shopping"],
+        "reply": reply,
+        "chips": chips,
         "instructions": [{
             "type": "cart_add",
             "size": size,
@@ -124,6 +160,18 @@ def _complete_turn(collected: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _sizes_for_step(
+    step: dict[str, Any],
+    session_hints: dict[str, Any] | None,
+) -> list[str]:
+    chips_from = step.get("chipsFrom")
+    if isinstance(chips_from, str):
+        raw = hint_path_get(session_hints, chips_from)
+        if isinstance(raw, list) and raw:
+            return available_sizes({"productOptions": {"sizes": raw}})
+    return available_sizes(session_hints)
+
+
 def begin_cart_add(
     state: dict[str, Any],
     action_input: dict[str, Any],
@@ -131,8 +179,12 @@ def begin_cart_add(
     session_hints: dict[str, Any] | None,
     contract: dict[str, Any],
     on_pdp: bool,
+    skills: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
     """Start a chip-guided cart flow instead of dumping the user on the PDP."""
+    flow = clarification_flow_for_action(skills or [], "add_to_cart")
+    if not flow or not flow.get("enabled"):
+        return None
     if action_input.get("size") and action_input.get("quantity"):
         return None
     product_id = str(
@@ -151,15 +203,17 @@ def begin_cart_add(
     if action_input.get("size"):
         collected["size"] = str(action_input["size"]).upper()
 
+    size_step = _step_def(flow, "size")
     navigate = [] if on_pdp else _navigate_instructions(contract, product_id, action_input)
     pending: dict[str, Any] = {
         "type": "cart_add",
         "action": "add_to_cart",
         "step": "quantity" if collected.get("size") else "size",
         "collectedInput": collected,
-        "sizes": available_sizes(session_hints),
+        "sizes": _sizes_for_step(size_step, session_hints),
         "navigateInstructions": navigate,
         "attemptsUsed": 0,
+        "flowSpec": flow,
     }
     state["pending"] = pending
     if pending["step"] == "quantity":
@@ -173,6 +227,7 @@ def continue_cart_add(state: dict[str, Any], message: str) -> dict[str, Any] | N
     if not isinstance(pending, dict) or pending.get("type") != "cart_add":
         return None
 
+    flow = pending.get("flowSpec") or clarification_flow_for_action([], "add_to_cart") or {}
     step = pending.get("step")
     collected = dict(pending.get("collectedInput") or {})
 
@@ -188,7 +243,11 @@ def continue_cart_add(state: dict[str, Any], message: str) -> dict[str, Any] | N
                     "chips": ["Browse all products"],
                     "instructions": [],
                 }
-            return _size_turn(pending, on_pdp=not pending.get("navigateInstructions"), retry=True)
+            return _size_turn(
+                pending,
+                on_pdp=not pending.get("navigateInstructions"),
+                retry=True,
+            )
         collected["size"] = size
         pending["collectedInput"] = collected
         pending["step"] = "quantity"
@@ -202,16 +261,17 @@ def continue_cart_add(state: dict[str, Any], message: str) -> dict[str, Any] | N
             pending["attemptsUsed"] = int(pending.get("attemptsUsed") or 0) + 1
             if pending["attemptsUsed"] > 2:
                 state["pending"] = None
+                qty_chips = _step_def(flow, "quantity").get("chips") or _QTY_CHIPS
                 return {
                     "intent": "unsupported",
                     "reply": "Tap 1, 2, or 3 for quantity.",
-                    "chips": ["1", "2", "3"],
+                    "chips": [str(c) for c in qty_chips],
                     "instructions": [],
                 }
             return _quantity_turn(pending)
         collected["quantity"] = qty
         state["pending"] = None
-        return _complete_turn(collected)
+        return _complete_turn(collected, flow)
 
     state["pending"] = None
     return None

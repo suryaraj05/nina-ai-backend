@@ -16,12 +16,26 @@ def run(coro):
 def test_builtin_skills_load_and_map_to_their_actions():
     skills = load_skills(BUILTIN_SKILLS_DIR)
     names = {s["name"] for s in skills}
-    assert {"search-skill", "cart-skill", "checkout-skill"} <= names
+    assert {
+        "search-skill",
+        "cart-skill",
+        "checkout-skill",
+        "product-detail-skill",
+        "navigation-skill",
+        "view-cart-skill",
+    } <= names
 
     by_action = skills_by_action(skills)
     assert "search_products" in by_action
-    assert "last_search_results" in by_action["add_to_cart"]
+    assert "last_search_results" in by_action["add_to_cart"] or "productId" in by_action["add_to_cart"]
     assert "confirm" in by_action["checkout"].lower()
+
+    cart = next(s for s in skills if s["name"] == "cart-skill")
+    assert isinstance(cart.get("clarificationFlow"), dict)
+    assert cart["clarificationFlow"].get("enabled") is True
+
+    search = next(s for s in skills if s["name"] == "search-skill")
+    assert isinstance(search.get("searchUX"), dict)
 
 
 def test_site_specific_skill_overrides_builtin_by_name(tmp_path: Path):

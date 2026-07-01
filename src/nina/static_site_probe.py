@@ -20,7 +20,7 @@ from nina.console_pack import fetch_or_build_sitemap
 from nina.generator.stages.action_infer import infer_actions
 from nina.generator.stages.assemble import assemble_contract
 from nina.generator.stages.crawler import crawl_urls
-from nina.generator.stages.dom_extract import page_signals_from_crawl
+from nina.generator.stages.dom_extract import page_signals_from_crawl, summarize_contract_signals
 from nina.generator.stages.routes import build_routes_manifest, merge_routes_into_contract
 from nina.generator.stages.sitemap import infer_page_type, parse_sitemap
 from nina.generator.stages.validate import validate_contract
@@ -257,6 +257,7 @@ def build_contract_from_static_site(
         selectors,
         auth_policy={"loginUrl": "/login", "gatedActions": ["checkout"]},
         risk_policy={"confirmActions": ["checkout"]},
+        page_signals=summarize_contract_signals(dom_by_type),
     )
     contract = _enrich_spa_actions(contract, paths)
     routes_manifest = build_routes_manifest(crawled)

@@ -31,6 +31,17 @@ def test_dom_extract_finds_search():
     assert signals["searchInputs"][0]["selector"] == "#q"
 
 
+def test_dom_extract_finds_size_buttons():
+    html = """
+    <html><body>
+      <button>S</button><button>M</button><button>L</button>
+      <button>Add to cart</button>
+    </body></html>
+    """
+    signals = extract_dom_signals(html)
+    assert signals["sizeOptions"] == ["S", "M", "L"]
+
+
 def test_infer_actions_builds_search():
     dom = {"home": {"searchInputs": [{"selector": "#q", "name": "q"}]}}
     actions, selectors = infer_actions({"home"}, dom)

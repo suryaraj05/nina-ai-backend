@@ -15,6 +15,7 @@ def assemble_contract(
     auth_policy: dict[str, Any] | None = None,
     risk_policy: dict[str, Any] | None = None,
     version: str = "1.0.0",
+    page_signals: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Merge site config, pages, actions into agent.json."""
     auth_policy = auth_policy or {}
@@ -90,5 +91,8 @@ def assemble_contract(
             "confirmActions": confirm_actions,
             "blockActions": block_actions,
         }
+
+    if page_signals:
+        contract["signals"] = page_signals
 
     return contract

@@ -21,7 +21,7 @@ from nina.generator.stages.action_infer import infer_actions
 from nina.generator.stages.api_manifest import load_api_manifest, merge_api_manifest_into_contract
 from nina.generator.stages.assemble import assemble_contract
 from nina.generator.stages.crawler import crawl_urls
-from nina.generator.stages.dom_extract import page_signals_from_crawl
+from nina.generator.stages.dom_extract import page_signals_from_crawl, summarize_contract_signals
 from nina.generator.stages.dom_playwright import enrich_crawl_with_playwright
 from nina.generator.stages.routes import build_routes_manifest, merge_routes_into_contract
 from nina.generator.stages.publish import publish_contract
@@ -187,7 +187,7 @@ def run_pipeline(
             continue
         ptype = page.get("pageType", "generic")
         bucket = dom_by_type.setdefault(ptype, {})
-        for key in ("searchInputs", "buttons", "forms", "links"):
+        for key in ("searchInputs", "buttons", "forms", "links", "sizeOptions"):
             existing = bucket.setdefault(key, [])
             for item in live.get(key, []):
                 if item not in existing:
@@ -202,6 +202,7 @@ def run_pipeline(
         selectors,
         auth_policy=auth_policy,
         risk_policy=risk_policy,
+        page_signals=summarize_contract_signals(dom_by_type),
     )
 
     routes_manifest = build_routes_manifest(crawled, version=contract.get("version", "1.0.0"))
