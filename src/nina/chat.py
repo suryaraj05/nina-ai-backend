@@ -12,7 +12,7 @@ from .catalog_rail import validate_catalog_mutation
 from .errors import LLMError, StoreError, fail, now_iso, ok
 from .executor import execute_action
 from .auth_queue import pop_replay_if_ready, save_queued_intent
-from .cart_flow import begin_cart_add, continue_cart_add
+from .cart_flow import begin_cart_add, continue_cart_add, rehydrate_cart_pending_from_hints
 from .critic import check_action_alignment
 from .fast_path import (
     normalize_fast_match,
@@ -191,6 +191,15 @@ async def _finish_cart_flow_turn(
     chips = flow.get("chips")
     if chips:
         turn["suggestionChips"] = list(chips)
+    pending = state.get("pending")
+    if isinstance(pending, dict) and pending.get("type") == "cart_add":
+        collected = pending.get("collectedInput") or {}
+        turn["cartFlow"] = {
+            "step": pending.get("step"),
+            "productId": collected.get("productId"),
+            "productName": collected.get("productName"),
+            "sizes": list(pending.get("sizes") or []),
+        }
     instructions = flow.get("instructions")
     if instructions:
         turn["instructions"] = list(instructions)
@@ -969,6 +978,11 @@ async def run_turn(
     seed_reference_map_from_client(
         state,
         (core.config or {}).get("_sessionHints"),
+    )
+    rehydrate_cart_pending_from_hints(
+        state,
+        (core.config or {}).get("_sessionHints"),
+        skills=getattr(core, "skills", None) or [],
     )
 
     # ── Stage 2: pre-LLM guardrails ──

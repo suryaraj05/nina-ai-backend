@@ -172,6 +172,51 @@ def _sizes_for_step(
     return available_sizes(session_hints)
 
 
+def rehydrate_cart_pending_from_hints(
+    state: dict[str, Any],
+    session_hints: dict[str, Any] | None,
+    *,
+    skills: list[dict[str, Any]] | None = None,
+) -> bool:
+    """Rebuild in-progress cart_add pending state from widget session_hints.
+
+    Render/multi-worker deployments may lose server session between turns when
+    NINA_REDIS_URL is unset; the widget echoes cartFlow on each follow-up msg.
+    """
+    pending = state.get("pending")
+    if isinstance(pending, dict) and pending.get("type") == "cart_add":
+        return True
+    raw = (session_hints or {}).get("cartFlow")
+    if not isinstance(raw, dict):
+        return False
+    product_id = str(
+        raw.get("productId") or raw.get("sku") or raw.get("variantId") or ""
+    ).strip()
+    if not product_id:
+        return False
+    flow = clarification_flow_for_action(skills or [], "add_to_cart") or {}
+    collected: dict[str, Any] = {
+        "productId": product_id,
+        "productName": str(raw.get("productName") or "this item"),
+    }
+    step = str(raw.get("step") or "size")
+    if raw.get("size"):
+        collected["size"] = str(raw["size"]).upper()
+        step = "quantity"
+    sizes = raw.get("sizes") or []
+    state["pending"] = {
+        "type": "cart_add",
+        "action": "add_to_cart",
+        "step": step,
+        "collectedInput": collected,
+        "sizes": list(sizes) if isinstance(sizes, list) else [],
+        "navigateInstructions": [],
+        "attemptsUsed": 0,
+        "flowSpec": flow,
+    }
+    return True
+
+
 def begin_cart_add(
     state: dict[str, Any],
     action_input: dict[str, Any],

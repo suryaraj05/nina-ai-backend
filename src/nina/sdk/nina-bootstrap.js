@@ -1,4 +1,4 @@
-/* nina-bootstrap.js — NINA conversational commerce widget v4.6
+/* nina-bootstrap.js — NINA conversational commerce widget v4.7
    Mobile bottom sheet · desktop dock (Gemini-style) or floating · suggestion chips.
    Session survives same-origin navigations (SPA pushState + sessionStorage).
 */
@@ -30,6 +30,7 @@
   var SHEET_CLOSE = 0.18;
   var CHIP_SHOW = 3;
   var _pinnedGuidanceChips = null;
+  var _cartFlowHint = null;
 
   var WA = {
     header: '#075e54',
@@ -751,6 +752,16 @@
       if (!isMobileSheet() && !_panelOpen && _openPanelFn) _openPanelFn();
     }
 
+    if (turn.cartFlow) {
+      _cartFlowHint = turn.cartFlow;
+    } else if (turn.intent === 'action' && turn.instructions && turn.instructions.length) {
+      var hasCart = turn.instructions.some(function (i) { return i.type === 'cart_add'; });
+      if (hasCart) {
+        _cartFlowHint = null;
+        _pinnedGuidanceChips = null;
+      }
+    }
+
     var honest = honestRetryChip(turn, userQuery);
     renderChips(honest, turn);
     maybeCartPulse(turn);
@@ -882,6 +893,7 @@
           lastSearchResults: clientSearchResults(),
           visibleProducts: visibleProductsFromPage(),
           productOptions: visibleProductOptions(),
+          cartFlow: _cartFlowHint,
         },
       }),
     })
