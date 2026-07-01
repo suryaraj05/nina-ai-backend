@@ -1,4 +1,4 @@
-/* nina-bootstrap.js — NINA conversational commerce widget v4.8
+/* nina-bootstrap.js — NINA conversational commerce widget v4.9
    Mobile bottom sheet · desktop dock (Gemini-style) or floating · suggestion chips.
    Session survives same-origin navigations (SPA pushState + sessionStorage).
 */
@@ -31,6 +31,7 @@
   var CHIP_SHOW = 3;
   var _pinnedGuidanceChips = null;
   var _cartFlowHint = null;
+  var _lastLoginUrl = '/login';
 
   var WA = {
     header: '#075e54',
@@ -623,7 +624,14 @@
         || (turn.actionResult && turn.actionResult.suggestionChips)
         || [];
       var intent = turn.intent || '';
-      guidance = intent === 'cart_guidance' || intent === 'clarification';
+      guidance = intent === 'cart_guidance' || intent === 'clarification'
+        || intent === 'confirmation' || intent === 'needs_login';
+      if (intent === 'confirmation' && !serverChips.length) {
+        serverChips = ['Yes', 'Not now'];
+      }
+      if (intent === 'needs_login' && !serverChips.length) {
+        serverChips = ['Sign in', 'View cart'];
+      }
       if (guidance && !serverChips.length) {
         var scraped = visibleProductOptions();
         if (scraped.sizes && scraped.sizes.length) serverChips = scraped.sizes;
@@ -671,7 +679,18 @@
   function sendUserMessage(display, apiText) {
     if (_busy) return;
     var api = apiText || display;
-    if (_SIZE_CHIP_RE.test(String(api || '').trim())) {
+    var trimmed = String(api || '').trim();
+    if (/^sign\s*in$/i.test(trimmed)) {
+      addRow('user', display);
+      navigateTo(_lastLoginUrl || '/login');
+      return;
+    }
+    if (/^view\s+cart$/i.test(trimmed)) {
+      addRow('user', display);
+      navigateTo('/cart');
+      return;
+    }
+    if (_SIZE_CHIP_RE.test(trimmed)) {
       selectSizeOnPage(api);
     }
     addRow('user', display);
@@ -919,7 +938,51 @@
     return doAdd();
   }
 
-  function clientSearchResults() {
+  function clientAuthHints() {
+    var hints = { authenticated: false, localStorage: {}, cookies: {} };
+    try {
+      var i;
+      for (i = 0; i < W.localStorage.length; i++) {
+        var key = W.localStorage.key(i);
+        if (!key) continue;
+        var lower = key.toLowerCase();
+        if (lower.indexOf('firebase:authuser') >= 0 || lower.indexOf('authuser') >= 0
+            || lower.indexOf('auth-token') >= 0 || lower.indexOf('session') >= 0) {
+          var val = W.localStorage.getItem(key);
+          if (val && val !== 'null' && val.length > 2) {
+            hints.authenticated = true;
+            hints.localStorage[key] = true;
+          }
+        }
+      }
+      var bodyText = (D.body && D.body.innerText || '').toLowerCase();
+      if (bodyText.indexOf('sign out') >= 0 || bodyText.indexOf('log out') >= 0
+          || bodyText.indexOf('logout') >= 0) {
+        hints.authenticated = true;
+        hints.selectorPresent = true;
+      }
+      var authLink = D.querySelector('a[href*="login"], a[href*="signin"], a[href*="sign-in"]');
+      var accountLink = D.querySelector('a[href*="account"], a[href*="profile"]');
+      if (accountLink && (!authLink || authLink.offsetParent === null)) {
+        hints.authenticated = true;
+      }
+    } catch (_) { /* ignore */ }
+    return hints;
+  }
+
+  function sessionHintsPayload() {
+    var auth = clientAuthHints();
+    return {
+      lastSearchResults: clientSearchResults(),
+      visibleProducts: visibleProductsFromPage(),
+      productOptions: visibleProductOptions(),
+      cartFlow: _cartFlowHint,
+      authenticated: auth.authenticated,
+      selectorPresent: auth.selectorPresent,
+      localStorage: auth.localStorage,
+      cookies: auth.cookies,
+    };
+  }
     var fromWidget = (_lastProducts || []).map(function (p, i) {
       return {
         index: i + 1,
@@ -957,12 +1020,7 @@
         confirmed: !!opts.confirmed,
         replayQueued: !!opts.replayQueued,
         page_context: { url: W.location.href },
-        session_hints: {
-          lastSearchResults: clientSearchResults(),
-          visibleProducts: visibleProductsFromPage(),
-          productOptions: visibleProductOptions(),
-          cartFlow: _cartFlowHint,
-        },
+        session_hints: sessionHintsPayload(),
       }),
     })
     .then(function (r) { return r.json(); })
@@ -985,14 +1043,15 @@
         addConfirm(function () { chat('yes', { confirmed: true }); }, null);
       } else if (intent === 'needs_login') {
         var loginUrl = null;
-        (turn.instructions || []).forEach(function (i) { if (i.url && !loginUrl) loginUrl = i.url; });
-        if (loginUrl) {
-          var row = createEl('div', { class: 'nina-confirm-row' });
-          row.innerHTML = '<button class="nina-yes">Sign in</button>';
-          row.querySelector('.nina-yes').onclick = function () { navigateTo(loginUrl); };
-          msgBox().appendChild(row);
-          msgBox().scrollTop = 99999;
-        }
+        (turn.instructions || []).forEach(function (i) {
+          if (!loginUrl && (i.loginUrl || i.url)) loginUrl = i.loginUrl || i.url;
+        });
+        if (!loginUrl) loginUrl = '/login';
+        _lastLoginUrl = loginUrl;
+        var row = createEl('div', { class: 'nina-confirm-row' });
+        row.querySelector('.nina-yes').onclick = function () { navigateTo(loginUrl); };
+        msgBox().appendChild(row);
+        msgBox().scrollTop = 99999;
       } else {
         execInstructions(turn.instructions);
       }

@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import uuid
+from typing import Any
 
 from jsonschema import Draft202012Validator
 
@@ -51,6 +53,45 @@ from .session import (
 
 
 _log = logging.getLogger(__name__)
+
+_CHECKOUT_PHRASE_RE = re.compile(
+    r"^\s*(?:buy\s+it|checkout|check\s+out|proceed\s+to\s+checkout|place\s+(?:my\s+)?order)\s*\.?!?\s*$",
+    re.IGNORECASE,
+)
+_SIGNED_IN_CLAIM_RE = re.compile(
+    r"\b(?:already\s+signed\s+in|i(?:'m| am)\s+signed\s+in|already\s+logged\s+in|"
+    r"i(?:'ve| have)\s+signed\s+in|signed\s+in\s+already|i\s+already\s+signed\s+in)\b",
+    re.IGNORECASE,
+)
+
+
+def _session_authenticated(core) -> bool:
+    cfg = core.config or {}
+    if cfg.get("_sessionAuthenticated"):
+        return True
+    from .contract import is_authenticated
+
+    contract = cfg.get("_agentContract") or {}
+    hints = cfg.get("_sessionHints") or {}
+    return is_authenticated(contract, hints)
+
+
+def _apply_signed_in_claim(core, msg: str) -> None:
+    if not _SIGNED_IN_CLAIM_RE.search(msg or ""):
+        return
+    hints = dict((core.config or {}).get("_sessionHints") or {})
+    hints["authenticated"] = True
+    core.config = {**(core.config or {}), "_sessionHints": hints}
+
+
+def _try_checkout_phrase(msg: str, actions: list[dict]) -> dict[str, Any] | None:
+    if not _CHECKOUT_PHRASE_RE.match(msg or ""):
+        return None
+    names = {a["name"] for a in actions}
+    for candidate in ("checkout", "place_order", "proceed_to_checkout"):
+        if candidate in names:
+            return {"action": candidate, "input": {}}
+    return None
 
 
 def _shape(value):
@@ -640,6 +681,7 @@ async def _apply_contract_safety_gate(
             usage_parts=usage_parts,
         )
         turn["instructions"] = instr
+        turn["suggestionChips"] = ["Sign in", "View cart"]
         await core.sessions.save(state)
         if core.debug:
             _debug_print(turn, state, msg)
@@ -679,6 +721,7 @@ async def _apply_contract_safety_gate(
             reasoning_summary=reasoning_summary,
             usage_parts=usage_parts,
         )
+        turn["suggestionChips"] = ["Yes", "Not now"]
         await core.sessions.save(state)
         if core.debug:
             _debug_print(turn, state, msg)
@@ -839,7 +882,7 @@ async def _handle_pending_continuations(
             actions=core.registry.all(),
         )
 
-    authenticated = bool((core.config or {}).get("_sessionAuthenticated"))
+    authenticated = _session_authenticated(core)
     replay = pop_replay_if_ready(
         state,
         authenticated=authenticated,
@@ -850,7 +893,7 @@ async def _handle_pending_continuations(
         gated = await _apply_contract_safety_gate(
             core, state, session_id, msg or f"(continuing {replay['intent']})", started,
             replay["intent"], replay.get("params") or {}, 1.0,
-            confirmed=False, threshold=threshold_for_gate, security=security,
+            confirmed=True, threshold=threshold_for_gate, security=security,
         )
         if gated:
             return gated
@@ -1076,6 +1119,7 @@ async def run_turn(
         (core.config or {}).get("_sessionHints"),
         skills=getattr(core, "skills", None) or [],
     )
+    _apply_signed_in_claim(core, msg)
 
     # ── Stage 2: pre-LLM guardrails ──
     security = ((core.config or {}).get("security")) or {}
@@ -1139,12 +1183,23 @@ async def run_turn(
     if fast_match:
         fast_match = normalize_fast_match(msg, fast_match, actions)
 
+    checkout_match = _try_checkout_phrase(msg, actions)
+
     enrichment = None
     reasoning_used = False
     reasoning_summary = None
     usage_parts: list[dict] = []
 
-    if fast_match:
+    if checkout_match:
+        res = {
+            "resolution": "action",
+            "action": checkout_match["action"],
+            "input": checkout_match["input"],
+            "missing_fields": [],
+            "confidence": 1.0,
+            "user_reply": "",
+        }
+    elif fast_match:
         res = {
             "resolution": "action",
             "action": fast_match["action"],
