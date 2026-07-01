@@ -1,4 +1,4 @@
-/* nina-bootstrap.js — NINA conversational commerce widget v4.9
+/* nina-bootstrap.js — NINA conversational commerce widget v4.9.1
    Mobile bottom sheet · desktop dock (Gemini-style) or floating · suggestion chips.
    Session survives same-origin navigations (SPA pushState + sessionStorage).
 */
@@ -983,6 +983,8 @@
       cookies: auth.cookies,
     };
   }
+
+  function clientSearchResults() {
     var fromWidget = (_lastProducts || []).map(function (p, i) {
       return {
         index: i + 1,
