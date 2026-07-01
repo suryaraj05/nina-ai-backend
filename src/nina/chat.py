@@ -59,8 +59,8 @@ _CHECKOUT_PHRASE_RE = re.compile(
     re.IGNORECASE,
 )
 _SIGNED_IN_CLAIM_RE = re.compile(
-    r"\b(?:already\s+signed\s+in|i(?:'m| am)\s+signed\s+in|already\s+logged\s+in|"
-    r"i(?:'ve| have)\s+signed\s+in|signed\s+in\s+already|i\s+already\s+signed\s+in)\b",
+    r"\b(?:signed\s+in|already\s+signed\s+in|i(?:'m| am)\s+signed\s+in|already\s+logged\s+in|"
+    r"i(?:'ve| have)\s+signed\s+in|signed\s+in\s+already|i\s+already\s+signed\s+in|i\s+did)\b",
     re.IGNORECASE,
 )
 

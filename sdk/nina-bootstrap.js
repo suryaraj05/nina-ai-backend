@@ -1,4 +1,4 @@
-/* nina-bootstrap.js — NINA conversational commerce widget v4.9.1
+/* nina-bootstrap.js — NINA conversational commerce widget v4.9.2
    Mobile bottom sheet · desktop dock (Gemini-style) or floating · suggestion chips.
    Session survives same-origin navigations (SPA pushState + sessionStorage).
 */
@@ -1051,6 +1051,7 @@
         if (!loginUrl) loginUrl = '/login';
         _lastLoginUrl = loginUrl;
         var row = createEl('div', { class: 'nina-confirm-row' });
+        row.innerHTML = '<button class="nina-yes">Sign in</button>';
         row.querySelector('.nina-yes').onclick = function () { navigateTo(loginUrl); };
         msgBox().appendChild(row);
         msgBox().scrollTop = 99999;
@@ -1058,8 +1059,9 @@
         execInstructions(turn.instructions);
       }
     })
-    .catch(function () {
+    .catch(function (err) {
       typing.remove();
+      if (typeof console !== 'undefined' && console.error) console.error('[NINA] query failed', err);
       addRow('sys', 'Connection error. Check your internet and try again.');
       renderChips();
     })

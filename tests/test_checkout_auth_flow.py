@@ -57,10 +57,19 @@ def test_buy_it_then_signed_in_replays_checkout():
     run(nina.chat("buy it", "s-replay"))
     state = run(nina._core.sessions.get("s-replay"))
     assert state.get("queuedIntent")
-    envelope = run(nina.chat("signed in already", "s-replay"))
+    envelope = run(nina.chat("signed in", "s-replay"))
     assert envelope["ok"]
     data = envelope["data"]
     assert data["actionCalled"] == "checkout"
+
+
+def test_signed_in_short_phrase_sets_auth_hint():
+    nina = run(_make_nina())
+    run(nina.chat("buy it", "s-short"))
+    envelope = run(nina.chat("signed in", "s-short"))
+    assert envelope["ok"]
+    hints = (nina._core.config or {}).get("_sessionHints") or {}
+    assert hints.get("authenticated") is True
 
 
 def test_buy_it_authenticated_user_gets_confirmation():
