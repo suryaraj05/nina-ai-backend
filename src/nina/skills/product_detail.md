@@ -4,10 +4,6 @@ appliesTo: [get_product_detail, open_product, product_detail]
 description: >
   Opens a product detail page when the user asks about a specific item, wants
   more info, or taps a product from search results.
-fastPath:
-  - "open {query}"
-  - "show me {query}"
-  - "tell me about {query}"
 composeGuidance: |
   Summarize only fields present in the action result (title, price, sizes).
   Offer add-to-cart if the user seems ready.

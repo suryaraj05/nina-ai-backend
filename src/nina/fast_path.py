@@ -46,6 +46,64 @@ def _compile_pattern(pattern: str) -> re.Pattern:
     return re.compile(rf"^\s*{body}\s*$", re.IGNORECASE)
 
 
+_SEARCH_ACTION_NAMES = (
+    "search_products",
+    "search",
+    "list_products",
+    "browse_products",
+)
+
+_DETAIL_ACTIONS = frozenset({
+    "open_product",
+    "get_product_detail",
+    "product_detail",
+})
+
+
+def message_looks_like_catalog_search(message: str) -> bool:
+    """True when the user is browsing/filtering, not opening one known product."""
+    from .action_input_coalesce import infer_search_query
+    from .catalog_rail import _GENERIC_BROWSE_TOKENS, _query_tokens, parse_price_constraint
+
+    query = infer_search_query(message)
+    if not query:
+        return False
+    text, price_cap = parse_price_constraint(query)
+    tokens = [t for t in _query_tokens(text) if t not in _GENERIC_BROWSE_TOKENS]
+    return bool(tokens) or price_cap is not None
+
+
+def _resolve_search_action(registered: dict[str, dict[str, Any]]) -> str | None:
+    for name in _SEARCH_ACTION_NAMES:
+        if name in registered:
+            return name
+    return None
+
+
+def normalize_fast_match(
+    message: str,
+    match: dict[str, Any],
+    actions: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Reroute mistaken open_product fast paths back to catalog search."""
+    registered = {a["name"]: a for a in actions}
+    action = match.get("action")
+    if action not in _DETAIL_ACTIONS:
+        return match
+    inp = dict(match.get("input") or {})
+    if inp.get("productUrl") or inp.get("productId") or inp.get("variantId"):
+        return match
+    if not message_looks_like_catalog_search(message):
+        return match
+    search_action = _resolve_search_action(registered)
+    if not search_action:
+        return match
+    from .action_input_coalesce import infer_search_query
+
+    query = inp.get("query") or infer_search_query(message) or message.strip()
+    return {"action": search_action, "input": {"query": query}}
+
+
 def compile_fast_path_patterns(skills: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Returns [{action, pattern, regex}, ...] across all skills' fastPath entries."""
     compiled: list[dict[str, Any]] = []
@@ -78,7 +136,16 @@ def try_fast_path(
         match = entry["regex"].match(message)
         if match:
             params = {k: v.strip() for k, v in match.groupdict().items() if v is not None}
-            return {"action": entry["action"], "input": params}
+            action = entry["action"]
+            if action in _DETAIL_ACTIONS and message_looks_like_catalog_search(message):
+                search_action = _resolve_search_action(registered)
+                if search_action:
+                    from .action_input_coalesce import infer_search_query
+
+                    query = params.get("query") or infer_search_query(message) or message.strip()
+                    return {"action": search_action, "input": {"query": query}}
+                continue
+            return {"action": action, "input": params}
 
     normalized = _normalize(message)
     for action in registered.values():
@@ -131,6 +198,22 @@ _SEARCH_FAST_STOP = frozenset({
     "help", "cancel", "stop",
 })
 
+_LITERAL_SEARCH_TRIGGER = re.compile(
+    r"\b(show me|show|find|look(?:ing)? for|search(?: for)?|"
+    r"do you have|got any|any)\b",
+    re.IGNORECASE,
+)
+
+
+def _eligible_for_catalog_search_fast_path(message: str) -> bool:
+    """Only bypass the LLM for obvious browse/search phrasing, not vague goals."""
+    if _LITERAL_SEARCH_TRIGGER.search(message or ""):
+        return True
+    from .catalog_rail import parse_price_constraint
+
+    _, price_cap = parse_price_constraint(message or "")
+    return price_cap is not None
+
 
 def try_catalog_search_fast_path(
     message: str,
@@ -143,6 +226,8 @@ def try_catalog_search_fast_path(
 
     normalized = _normalize(message)
     if normalized in _SEARCH_FAST_STOP:
+        return None
+    if not _eligible_for_catalog_search_fast_path(message):
         return None
 
     registered = {a["name"]: a for a in actions if a["name"] not in excluded_actions}

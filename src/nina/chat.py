@@ -14,7 +14,12 @@ from .executor import execute_action
 from .auth_queue import pop_replay_if_ready, save_queued_intent
 from .cart_flow import begin_cart_add, continue_cart_add
 from .critic import check_action_alignment
-from .fast_path import try_catalog_search_fast_path, try_fast_path, try_reference_cart_fast_path
+from .fast_path import (
+    normalize_fast_match,
+    try_catalog_search_fast_path,
+    try_fast_path,
+    try_reference_cart_fast_path,
+)
 from .guardrails import (
     blocked_turn_payload,
     detect_injection_semantic,
@@ -135,6 +140,10 @@ def _missing_field_question(action_name: str, schema_errors: list[str]) -> str:
         return "What would you like me to search for?"
     if action_name == "open_category" and "categorySlug" in joined:
         return "Which category would you like to browse?"
+    if action_name in ("open_product", "get_product_detail", "product_detail") and (
+        "productUrl" in joined or "productId" in joined
+    ):
+        return "Which product should I open? Pick one from the results or tell me the name."
     return (
         f"I need a bit more detail to run {action_name.replace('_', ' ')}: "
         + schema_errors[0]
@@ -1003,12 +1012,16 @@ async def run_turn(
         (risk_cfg.get("confirmActions") or []) + (risk_cfg.get("blockActions") or [])
     )
     catalog_rows = (core.config or {}).get("_productCatalog") or []
-    fast_match = try_fast_path(
-        msg,
-        actions,
-        core.fast_path_patterns,
-        excluded_actions=fast_path_excluded,
+    fast_match = try_catalog_search_fast_path(
+        msg, actions, excluded_actions=fast_path_excluded,
     )
+    if not fast_match:
+        fast_match = try_fast_path(
+            msg,
+            actions,
+            core.fast_path_patterns,
+            excluded_actions=fast_path_excluded,
+        )
     if not fast_match:
         fast_match = try_reference_cart_fast_path(
             msg,
@@ -1017,10 +1030,8 @@ async def run_turn(
             excluded_actions=fast_path_excluded,
             catalog_rows=catalog_rows,
         )
-    if not fast_match and catalog_rows:
-        fast_match = try_catalog_search_fast_path(
-            msg, actions, excluded_actions=fast_path_excluded,
-        )
+    if fast_match:
+        fast_match = normalize_fast_match(msg, fast_match, actions)
 
     enrichment = None
     reasoning_used = False
