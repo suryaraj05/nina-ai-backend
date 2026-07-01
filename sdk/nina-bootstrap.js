@@ -1,4 +1,4 @@
-/* nina-bootstrap.js — NINA conversational commerce widget v4.4
+/* nina-bootstrap.js — NINA conversational commerce widget v4.5
    Mobile bottom sheet · desktop dock (Gemini-style) or floating · suggestion chips.
    Session survives same-origin navigations (SPA pushState + sessionStorage).
 */
@@ -615,20 +615,24 @@
     var box = D.getElementById('nina-chips');
     if (!box) return;
     var serverChips = [];
+    var guidance = false;
     if (turn) {
       serverChips = turn.suggestionChips
         || (turn.actionResult && turn.actionResult.suggestionChips)
         || [];
+      var intent = turn.intent || '';
+      guidance = intent === 'cart_guidance' || intent === 'clarification';
     }
-    var pool = serverChips.length
-      ? serverChips.concat(buildChipPool(honestExtra))
-      : buildChipPool(honestExtra);
     var picks;
-    if (serverChips.length) {
+    if (guidance && serverChips.length) {
+      // Size / quantity / clarification: show ALL server chips verbatim, no
+      // generic pool mixing and no truncation — these are the actual choices.
+      picks = serverChips.slice(0, 8);
+    } else if (serverChips.length) {
       var extra = shufflePick(buildChipPool(honestExtra), Math.max(0, CHIP_SHOW - serverChips.length));
       picks = serverChips.slice(0, CHIP_SHOW).concat(extra).slice(0, CHIP_SHOW);
     } else {
-      picks = shufflePick(pool, CHIP_SHOW);
+      picks = shufflePick(buildChipPool(honestExtra), CHIP_SHOW);
     }
     _currentChipTexts = picks;
     box.innerHTML = '';
